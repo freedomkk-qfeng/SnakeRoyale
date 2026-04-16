@@ -102,7 +102,10 @@ async def handle_spectate(request: web.Request):
         async for msg in ws:
             pass  # Spectators don't send anything meaningful
     finally:
-        spectators.remove(ws)
+        try:
+            spectators.remove(ws)
+        except ValueError:
+            pass
         logger.info(f"Spectator disconnected (total: {len(spectators)})")
     return ws
 
@@ -222,6 +225,15 @@ def create_app():
         with open(client_py, "r", encoding="utf-8") as f:
             return web.Response(text=f.read(), content_type="text/plain")
     app.router.add_get("/api/client-source", handle_client_source)
+    docs_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs"))
+    app.router.add_get("/api/docs/zh", lambda r: web.FileResponse(
+        os.path.join(docs_dir, "API.md"),
+        headers={"Content-Type": "text/plain; charset=utf-8"},
+    ))
+    app.router.add_get("/api/docs/en", lambda r: web.FileResponse(
+        os.path.join(docs_dir, "API_en.md"),
+        headers={"Content-Type": "text/plain; charset=utf-8"},
+    ))
     app.router.add_static("/static/", static_dir)
     app.on_startup.append(start_game_loop)
     app.on_cleanup.append(stop_game_loop)

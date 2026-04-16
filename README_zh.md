@@ -25,7 +25,8 @@ snake-royale/
 │   ├── requirements.txt
 │   └── Dockerfile
 └── docs/
-    └── API.md              # API 文档 (Markdown)
+    ├── API.md              # API 文档 (Markdown, 中文)
+    └── API_en.md           # API 文档 (Markdown, English)
 ```
 
 ## 快速开始
@@ -44,12 +45,7 @@ docker compose up -d
 - `http://localhost:15000/` — 实时 Dashboard 观战
 - `http://localhost:15000/docs` — API 文档
 
-调整 bot 数量：
-```bash
-docker compose up -d --scale bot=1  # 只起 1 个 bot 容器（内含 20 个 AI）
-```
-
-或修改 `docker-compose.yml` 中 bot 的 `-n` 参数。
+bot 数量可在 `docker-compose.yml` 中修改 `-n` 参数。
 
 ### 手动部署
 

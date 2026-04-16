@@ -25,7 +25,8 @@ snake-royale/
 │   ├── requirements.txt
 │   └── Dockerfile
 └── docs/
-    └── API.md              # API docs (Markdown)
+    ├── API.md              # API docs (Markdown, Chinese)
+    └── API_en.md           # API docs (Markdown, English)
 ```
 
 ## Quick Start
@@ -44,12 +45,7 @@ Open your browser:
 - `http://localhost:15000/` — Live dashboard
 - `http://localhost:15000/docs` — API documentation
 
-Adjust bot count:
-```bash
-docker compose up -d --scale bot=1  # 1 bot container (20 AIs inside)
-```
-
-Or change the `-n` parameter in `docker-compose.yml`.
+Bot count can be adjusted via the `-n` parameter in `docker-compose.yml`.
 
 ### Manual Deployment
 

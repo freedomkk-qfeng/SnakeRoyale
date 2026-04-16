@@ -116,8 +116,10 @@ class Game:
         if not snake:
             return
         name = snake.name
+        public_id = snake.public_id
         del self.snakes[snake_id]
         new_snake = self.spawn_snake(snake_id, name)
+        new_snake.public_id = public_id
         new_snake.score = 0
         return new_snake
 
