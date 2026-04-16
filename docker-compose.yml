@@ -1,0 +1,15 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "15000:15000"
+    restart: unless-stopped
+
+  bot:
+    build: ./client
+    command: ["-n", "20", "--server", "http://server:15000", "--prefix", "Bot"]
+    depends_on:
+      - server
+    restart: unless-stopped

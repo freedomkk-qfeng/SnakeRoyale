@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+.git
+.gitignore
+.github
+README.md
+LICENSE
+docs/
+docker-compose.yml
+docker-compose.override.yml
+.vscode
+.idea

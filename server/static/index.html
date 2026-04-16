@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>贪吃蛇 Online — Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-primary: #0a0a1a;
+    --bg-secondary: #12122a;
+    --bg-card: #1a1a3e;
+    --bg-card-hover: #222255;
+    --border: #2a2a5a;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent-purple: #7c3aed;
+    --accent-purple-soft: #a78bfa;
+    --accent-rose: #f43f5e;
+    --accent-green: #22c55e;
+    --accent-amber: #f59e0b;
+    --accent-cyan: #06b6d4;
+    --glow-purple: 0 0 20px rgba(124, 58, 237, 0.3);
+    --glow-rose: 0 0 15px rgba(244, 63, 94, 0.25);
+    --glow-green: 0 0 15px rgba(34, 197, 94, 0.25);
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* === Header === */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 24px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-rose));
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: var(--glow-purple);
+  }
+  .title {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-purple-soft), var(--accent-rose));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: var(--accent-green);
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  }
+  .status-badge.disconnected {
+    background: rgba(244, 63, 94, 0.1);
+    border-color: rgba(244, 63, 94, 0.3);
+    color: var(--accent-rose);
+  }
+  .status-badge.disconnected .status-dot {
+    background: var(--accent-rose);
+    animation: none;
+  }
+
+  /* === Stats Row === */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 10px 24px;
+    flex-shrink: 0;
+  }
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+  }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-primary);
+  }
+  .stat-value.purple { color: var(--accent-purple-soft); }
+  .stat-value.green { color: var(--accent-green); }
+  .stat-value.amber { color: var(--accent-amber); }
+  .stat-value.cyan { color: var(--accent-cyan); }
+
+  /* === Main Layout === */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 12px;
+    padding: 0 24px 12px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* === Game Canvas === */
+  .game-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .game-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+  .panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tick-counter {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .canvas-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 0;
+  }
+  #gameCanvas {
+    border-radius: 8px;
+    image-rendering: pixelated;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  /* === Sidebar === */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* === Leaderboard === */
+  .leaderboard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .lb-list {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .lb-list::-webkit-scrollbar { width: 6px; }
+  .lb-list::-webkit-scrollbar-track { background: transparent; }
+  .lb-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .lb-list::-webkit-scrollbar-thumb:hover { background: var(--accent-purple); }
+  .lb-item {
+    display: grid;
+    grid-template-columns: 24px 1fr 40px;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    transition: background 150ms ease;
+  }
+  .lb-item:hover { background: var(--bg-card-hover); }
+  .lb-item + .lb-item { border-top: 1px solid rgba(42, 42, 90, 0.5); }
+  .lb-rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .lb-item:nth-child(1) .lb-rank { color: var(--accent-amber); }
+  .lb-item:nth-child(2) .lb-rank { color: #c0c0c0; }
+  .lb-item:nth-child(3) .lb-rank { color: #cd7f32; }
+
+  .lb-name-col {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .lb-name {
+    font-size: 13px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+  .lb-bar-wrap {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .lb-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 300ms ease;
+    min-width: 2px;
+  }
+  .lb-length-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-green);
+    text-align: right;
+  }
+  .lb-header {
+    display: grid;
+    grid-template-columns: 24px 1fr 40px;
+    gap: 8px;
+    padding: 0 8px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+  .lb-header span:nth-child(3) { text-align: right; }
+
+  /* === Event Log === */
+  .event-log {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    height: 160px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .log-list {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .log-entry {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 3px 0;
+    line-height: 1.5;
+  }
+  .log-entry .time { color: var(--text-muted); }
+  .log-entry .death { color: var(--accent-rose); }
+  .log-entry .join { color: var(--accent-green); }
+  .log-entry .eat { color: var(--accent-amber); }
+
+  /* === Snake Color Band (for name labels) === */
+  .snake-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* === Responsive === */
+  @media (max-width: 1024px) {
+    .main { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">🐍</div>
+    <span class="title">贪吃蛇 Online</span>
+    <a href="/docs" style="margin-left:12px;color:var(--accent-purple-soft);text-decoration:none;font-size:13px;font-weight:500;padding:4px 12px;border:1px solid var(--border);border-radius:6px;">API 文档</a>
+  </div>
+  <div class="status-badge disconnected" id="connStatus">
+    <span class="status-dot"></span>
+    <span id="connText">连接中…</span>
+  </div>
+</header>
+
+<!-- Stats -->
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">在线玩家</div>
+    <div class="stat-value purple" id="statPlayers">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">存活蛇</div>
+    <div class="stat-value green" id="statAlive">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">食物数量</div>
+    <div class="stat-value amber" id="statFood">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">🏆 历史最长</div>
+    <div class="stat-value cyan" id="statRecord">0</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="statRecordName">-</div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <!-- Game View -->
+  <div class="game-panel">
+    <div class="game-panel-header">
+      <span class="panel-title">实时游戏画面</span>
+      <span class="tick-counter" id="tickRate">— tick/s</span>
+    </div>
+    <div class="canvas-wrapper">
+      <canvas id="gameCanvas" width="800" height="800"></canvas>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <!-- Leaderboard -->
+    <div class="leaderboard">
+      <div class="game-panel-header">
+        <span class="panel-title">排行榜</span>
+      </div>
+      <div class="lb-header">
+        <span>#</span><span>名字</span><span>长度</span>
+      </div>
+      <div class="lb-list" id="lbList"></div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="event-log">
+      <div class="game-panel-header">
+        <span class="panel-title">事件日志</span>
+      </div>
+      <div class="log-list" id="logList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // === Config ===
+  const CANVAS_SIZE = 800;
+  const FIELD_SIZE = 100;
+  const CELL = CANVAS_SIZE / FIELD_SIZE; // 8px per cell
+
+  // Neon snake colors - distinct and vibrant
+  const SNAKE_COLORS = [
+    '#7c3aed', '#f43f5e', '#06b6d4', '#22c55e', '#f59e0b',
+    '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444', '#3b82f6',
+    '#d946ef', '#84cc16', '#f97316', '#0ea5e9', '#a855f7',
+    '#10b981', '#e11d48', '#6366f1', '#eab308', '#06b6d4',
+  ];
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // State
+  let snakeColorMap = {};
+  let colorIndex = 0;
+  let lastState = null;
+  let eventLog = [];
+  let prevSnakeIds = new Set();
+  let prevScores = {};
+  let tickTimes = [];
+
+  function getSnakeColor(id) {
+    if (!snakeColorMap[id]) {
+      snakeColorMap[id] = SNAKE_COLORS[colorIndex % SNAKE_COLORS.length];
+      colorIndex++;
+    }
+    return snakeColorMap[id];
+  }
+
+  // === Canvas Drawing ===
+  function drawGame(state) {
+    // Background
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Grid (subtle)
+    ctx.strokeStyle = 'rgba(42, 42, 90, 0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= FIELD_SIZE; i += 10) {
+      const p = i * CELL;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, CANVAS_SIZE); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(CANVAS_SIZE, p); ctx.stroke();
+    }
+
+    // Foods - small glowing dots
+    for (const [fx, fy] of state.foods) {
+      const cx = fx * CELL + CELL / 2;
+      const cy = fy * CELL + CELL / 2;
+      // Glow
+      ctx.beginPath();
+      ctx.arc(cx, cy, CELL * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.15)';
+      ctx.fill();
+      // Dot
+      ctx.beginPath();
+      ctx.arc(cx, cy, CELL * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fill();
+    }
+
+    // Snakes
+    for (const snake of state.snakes) {
+      if (!snake.alive) continue;
+      const color = getSnakeColor(snake.id);
+
+      // Body
+      for (let i = snake.body.length - 1; i >= 0; i--) {
+        const [bx, by] = snake.body[i];
+        const x = bx * CELL;
+        const y = by * CELL;
+
+        if (i === 0) {
+          // Head - brighter with glow
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.roundRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1, 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          // Eyes
+          const dir = snake.direction;
+          let ex1, ey1, ex2, ey2;
+          const ec = CELL * 0.25;
+          const eo = CELL * 0.3;
+          if (dir === 'right') { ex1 = x+CELL-ec-1; ey1 = y+eo; ex2 = x+CELL-ec-1; ey2 = y+CELL-eo-ec; }
+          else if (dir === 'left') { ex1 = x+1; ey1 = y+eo; ex2 = x+1; ey2 = y+CELL-eo-ec; }
+          else if (dir === 'up') { ex1 = x+eo; ey1 = y+1; ex2 = x+CELL-eo-ec; ey2 = y+1; }
+          else { ex1 = x+eo; ey1 = y+CELL-ec-1; ex2 = x+CELL-eo-ec; ey2 = y+CELL-ec-1; }
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(ex1, ey1, ec, ec);
+          ctx.fillRect(ex2, ey2, ec, ec);
+        } else {
+          // Body segment - slightly transparent toward tail
+          const alpha = 0.5 + 0.5 * (1 - i / snake.body.length);
+          ctx.fillStyle = color;
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.roundRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1, 1.5);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // Name label above head
+      if (snake.body.length > 0) {
+        const [hx, hy] = snake.body[0];
+        const lx = hx * CELL + CELL / 2;
+        const ly = hy * CELL - 4;
+        ctx.font = '600 9px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillText(snake.name, lx + 0.5, ly + 0.5);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(snake.name, lx, ly);
+      }
+    }
+  }
+
+  // === Leaderboard (incremental DOM updates to avoid flicker) ===
+  let lbElements = [];  // cached DOM elements
+
+  function updateLeaderboard(snakes) {
+    const sorted = [...snakes].filter(s => s.alive).sort((a, b) => b.length - a.length);
+    const lbList = document.getElementById('lbList');
+    const maxLen = sorted.length > 0 ? Math.max(...sorted.map(s => s.length)) : 1;
+
+    // Grow/shrink element pool
+    while (lbElements.length < sorted.length) {
+      const el = createLbRow();
+      lbList.appendChild(el.root);
+      lbElements.push(el);
+    }
+    while (lbElements.length > sorted.length) {
+      const el = lbElements.pop();
+      el.root.remove();
+    }
+
+    // Update each row in-place
+    for (let i = 0; i < sorted.length; i++) {
+      const s = sorted[i];
+      const el = lbElements[i];
+      const color = getSnakeColor(s.id);
+      const pct = Math.max(2, (s.length / maxLen) * 100);
+
+      el.rank.textContent = i + 1;
+      el.colorDot.style.background = color;
+      el.name.textContent = s.name;
+      el.bar.style.width = pct + '%';
+      el.bar.style.background = color;
+      el.lengthVal.textContent = s.length;
+    }
+  }
+
+  function createLbRow() {
+    const root = document.createElement('div');
+    root.className = 'lb-item';
+
+    const rank = document.createElement('span');
+    rank.className = 'lb-rank';
+
+    const nameCol = document.createElement('div');
+    nameCol.className = 'lb-name-col';
+
+    const nameRow = document.createElement('span');
+    nameRow.className = 'lb-name';
+    const colorDot = document.createElement('span');
+    colorDot.className = 'snake-color';
+    nameRow.appendChild(colorDot);
+    const nameTxt = document.createTextNode('');
+    nameRow.appendChild(nameTxt);
+
+    const barWrap = document.createElement('div');
+    barWrap.className = 'lb-bar-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'lb-bar';
+    barWrap.appendChild(bar);
+
+    nameCol.appendChild(nameRow);
+    nameCol.appendChild(barWrap);
+
+    const lengthVal = document.createElement('span');
+    lengthVal.className = 'lb-length-val';
+
+    root.appendChild(rank);
+    root.appendChild(nameCol);
+    root.appendChild(lengthVal);
+
+    return { root, rank, colorDot, name: nameTxt, bar, lengthVal };
+  }
+
+  // === Stats ===
+  function updateStats(state) {
+    document.getElementById('statPlayers').textContent = state.snakes.length;
+    document.getElementById('statAlive').textContent = state.snakes.filter(s => s.alive).length;
+    document.getElementById('statFood').textContent = state.foods.length;
+    if (state.record) {
+      document.getElementById('statRecord').textContent = state.record.length;
+      document.getElementById('statRecordName').textContent = state.record.name;
+    }
+  }
+
+  // === Event Log ===
+  function addLogEntry(html) {
+    const now = new Date();
+    const time = now.toLocaleTimeString('zh-CN', { hour12: false });
+    eventLog.unshift({ time, html });
+    if (eventLog.length > 50) eventLog.length = 50;
+    renderLog();
+  }
+
+  function renderLog() {
+    const el = document.getElementById('logList');
+    el.innerHTML = eventLog.map(e =>
+      `<div class="log-entry"><span class="time">${e.time}</span> ${e.html}</div>`
+    ).join('');
+  }
+
+  function detectEvents(state) {
+    const currentIds = new Set(state.snakes.map(s => s.id));
+
+    // New players
+    for (const s of state.snakes) {
+      if (!prevSnakeIds.has(s.id)) {
+        addLogEntry(`<span class="join">▶</span> <b>${esc(s.name)}</b> 加入了游戏`);
+      }
+    }
+
+    // Disconnected
+    for (const id of prevSnakeIds) {
+      if (!currentIds.has(id)) {
+        // Could lookup old name from color map keys
+        addLogEntry(`<span class="death">◀</span> 一位玩家离开了`);
+      }
+    }
+
+    // Score changes (ate food)
+    for (const s of state.snakes) {
+      const prev = prevScores[s.id] || 0;
+      if (s.score > prev && prev > 0) {
+        // Don't log every eat, only milestones
+        if (s.score % 10 === 0) {
+          addLogEntry(`<span class="eat">★</span> <b>${esc(s.name)}</b> 达到 ${s.score} 分！`);
+        }
+      }
+    }
+
+    prevSnakeIds = currentIds;
+    prevScores = {};
+    for (const s of state.snakes) prevScores[s.id] = s.score;
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // === Tick Rate Measurement ===
+  function measureTickRate() {
+    const now = performance.now();
+    tickTimes.push(now);
+    if (tickTimes.length > 20) tickTimes.shift();
+    if (tickTimes.length >= 2) {
+      const elapsed = (tickTimes[tickTimes.length - 1] - tickTimes[0]) / 1000;
+      const rate = ((tickTimes.length - 1) / elapsed).toFixed(1);
+      document.getElementById('tickRate').textContent = `${rate} tick/s`;
+    }
+  }
+
+  // === WebSocket ===
+  let ws = null;
+  let reconnectTimer = null;
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/spectate`);
+
+    ws.onopen = () => {
+      const badge = document.getElementById('connStatus');
+      badge.className = 'status-badge';
+      document.getElementById('connText').textContent = '已连接';
+      addLogEntry(`<span class="join">●</span> Dashboard 已连接到服务器`);
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const state = JSON.parse(evt.data);
+        if (state.type === 'state') {
+          lastState = state;
+          measureTickRate();
+          drawGame(state);
+          updateStats(state);
+          updateLeaderboard(state.snakes);
+          detectEvents(state);
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    };
+
+    ws.onclose = () => {
+      const badge = document.getElementById('connStatus');
+      badge.className = 'status-badge disconnected';
+      document.getElementById('connText').textContent = '已断开';
+      // Reconnect
+      if (!reconnectTimer) {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connect();
+        }, 2000);
+      }
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  // Draw empty field on load (grid lines, no snakes)
+  function drawEmptyField() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.strokeStyle = 'rgba(42, 42, 90, 0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= FIELD_SIZE; i += 10) {
+      const p = i * CELL;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, CANVAS_SIZE); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(CANVAS_SIZE, p); ctx.stroke();
+    }
+  }
+  drawEmptyField();
+
+  connect();
+})();
+</script>
+</body>
+</html>
