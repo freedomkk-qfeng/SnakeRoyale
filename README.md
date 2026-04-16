@@ -1,136 +1,123 @@
 # 🐍 SnakeRoyale
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[中文文档](README_zh.md)
 
-多人在线贪吃蛇对战平台，专为课堂教学设计。老师部署服务器，学生编写 AI 客户端进行对战。
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-> A multiplayer snake battle arena for classroom teaching. The teacher deploys a server; students write AI clients to compete.
+A multiplayer snake battle arena for AI programming education. Deploy the server, code your AI client, and learn pathfinding & game strategy through competition.
 
-## 项目结构 / Project Structure
+## Project Structure
 
 ```
 snake-royale/
-├── docker-compose.yml      # 一键拉起服务
+├── docker-compose.yml      # One-command deployment
 ├── server/
-│   ├── server.py           # aiohttp 服务器 (HTTP + WebSocket)
-│   ├── game.py             # 游戏引擎
+│   ├── server.py           # aiohttp server (HTTP + WebSocket)
+│   ├── game.py             # Game engine
 │   ├── static/
-│   │   ├── index.html      # 实时 Dashboard (观战 + 排行榜)
-│   │   └── docs.html       # API 文档页
+│   │   ├── index.html      # Live dashboard (spectate + leaderboard)
+│   │   └── docs.html       # API docs page
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── client/
-│   ├── client.py           # 示例 AI 客户端 (BFS 寻路)
-│   ├── run_clients.py      # 批量启动脚本
+│   ├── client.py           # Example AI client (BFS pathfinding)
+│   ├── run_clients.py      # Batch launcher
 │   ├── requirements.txt
 │   └── Dockerfile
 └── docs/
-    └── API.md              # API 文档 (Markdown 原始版)
+    └── API.md              # API docs (Markdown)
 ```
 
-## 快速开始
+## Quick Start
 
-### Docker Compose (推荐)
+### Docker Compose (Recommended)
 
 ```bash
 docker compose up -d
 ```
 
-这会启动：
-- **server** — 游戏服务器，监听 `15000` 端口
-- **bot** — 20 个示例 AI 客户端自动加入对战
+This starts:
+- **server** — Game server on port `15000`
+- **bot** — 20 example AI clients auto-join the game
 
-打开浏览器访问：
-- `http://localhost:15000/` — 实时 Dashboard 观战
-- `http://localhost:15000/docs` — API 文档
+Open your browser:
+- `http://localhost:15000/` — Live dashboard
+- `http://localhost:15000/docs` — API documentation
 
-调整 bot 数量：
+Adjust bot count:
 ```bash
-docker compose up -d --scale bot=1  # 只起 1 个 bot 容器 (内含 20 个 AI)
+docker compose up -d --scale bot=1  # 1 bot container (20 AIs inside)
 ```
 
-或者修改 `docker-compose.yml` 中 bot 的 `-n` 参数。
+Or change the `-n` parameter in `docker-compose.yml`.
 
-### 手动部署
+### Manual Deployment
 
 ```bash
-# 启动服务器
+# Start server
 cd server
 pip install -r requirements.txt
 python server.py
 
-# 启动示例客户端 (另开终端)
+# Start example clients (in another terminal)
 cd client
 pip install -r requirements.txt
-python run_clients.py -n 10                # 启动 10 个 AI
-python run_clients.py -n 5 --server http://192.168.1.100:15000  # 指定服务器
+python run_clients.py -n 10                # Launch 10 AIs
+python run_clients.py -n 5 --server http://192.168.1.100:15000  # Custom server
 ```
 
-## 游戏规则
+## Game Rules
 
-| 项目 | 值 |
-|------|-----|
-| 场地大小 | 100 × 100 |
-| Tick 速率 | 10 次/秒 |
-| 初始长度 | 3 |
-| 死亡条件 | 撞墙 / 撞自己 / 撞别人 / 头对头 |
-| 死亡机制 | 蛇身变为食物散落原地，随时间缓慢腐烂 |
-| 重生 | 死亡后自动在随机位置重生 |
+| Item | Value |
+|------|-------|
+| Field size | 100 × 100 |
+| Tick rate | 10/sec |
+| Initial length | 3 |
+| Death | Hit wall / self / other snake / head-on collision |
+| On death | Body turns into food that slowly decays over time |
+| Respawn | Automatic at a random position |
 
-## 学生接入指南
+## Write Your AI
 
-### 1. 获取示例代码
+### 1. Get the Example Client & Docs
 
-- 浏览器打开 `http://<server>:15000/docs`，点击「查看示例代码」
-- 或直接下载：`http://<server>:15000/download/client.py`
+- API docs: `http://<server>:15000/docs`
+- Download example client: `http://<server>:15000/download/client.py`
 
-### 2. 安装依赖
+### 2. Install & Run
 
 ```bash
 pip install aiohttp
+python client.py --server http://<server>:15000 --name "my_snake"
 ```
 
-### 3. 运行
+### 3. Build Your Strategy
 
-```bash
-python client.py --server http://<server>:15000 --name "你的名字"
-```
+Study the example client and API docs, then implement your own decision logic. Each tick the server pushes full game state; your client returns a direction (`up` / `down` / `left` / `right`).
 
-### 4. 开发自己的 AI
+**Strategy ideas:**
+- Beginner: Avoid walls and snake bodies, pick a random safe direction
+- Intermediate: BFS / A* to find the nearest food
+- Advanced: Flood fill for space evaluation, opponent prediction, encirclement
 
-核心逻辑在 `SnakeAI.decide(state)` 方法中：
+## API Overview
 
-```python
-def decide(self, state: dict) -> str:
-    # state["snakes"] — 所有蛇的位置信息
-    # state["foods"]  — 所有食物坐标
-    # 返回 "up" / "down" / "left" / "right"
-    return "right"
-```
+| Endpoint | Description |
+|----------|-------------|
+| `POST /register` | Register a player, get a key |
+| `WS /ws?key=xxx` | WebSocket game connection |
+| `GET /status` | Leaderboard and game state |
+| `WS /spectate` | Dashboard spectator connection |
+| `GET /docs` | Full API documentation |
 
-**策略方向：**
-- 入门：避开墙壁和蛇身，随机选安全方向
-- 进阶：BFS/A* 寻找最近食物
-- 高级：空间评估 (flood fill)、预判对手、围杀策略
+See `http://<server>:15000/docs` for the full protocol.
 
-## API 概览
-
-| 接口 | 说明 |
-|------|------|
-| `POST /register` | 注册玩家，获取 key |
-| `WS /ws?key=xxx` | WebSocket 游戏连接 |
-| `GET /status` | 排行榜和游戏状态 |
-| `WS /spectate` | Dashboard 观战连接 |
-| `GET /docs` | 完整 API 文档 |
-
-详细协议见 `http://<server>:15000/docs`
-
-## 技术栈 / Tech Stack
+## Tech Stack
 
 - Python 3.12 + aiohttp
-- 纯 WebSocket 通信，无额外依赖
-- 单 HTML 文件 Dashboard (Canvas 渲染)
+- Pure WebSocket communication, no extra dependencies
+- Single-file HTML dashboard (Canvas rendering)
 
 ## License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)
