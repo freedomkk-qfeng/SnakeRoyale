@@ -1,5 +1,7 @@
 # SnakeRoyale — API Docs
 
+Current version: `0.2.0`
+
 ## Overview
 
 SnakeRoyale is a multiplayer online snake battle arena. The server runs the game engine; clients connect over the network to control their snakes.
@@ -16,7 +18,7 @@ SnakeRoyale is a multiplayer online snake battle arena. The server runs the game
 |------|-------|
 | Field size | 100 × 100 cells |
 | Coordinates | (0,0) is top-left, x grows right, y grows down |
-| Tick rate | 10/sec |
+| Tick rate | Configurable via `SNAKE_TICK_RATE` (default: 10/sec) |
 | Initial length | 3 |
 | Death conditions | Hit wall / self / other snake / head-on collision |
 | On death | Auto-respawn at random position, length reset to 3, score reset to 0 |
@@ -101,11 +103,21 @@ Received immediately after connecting:
   "you": 1,
   "name": "your_name",
   "field": {"width": 100, "height": 100},
-  "tick_rate": 10
+  "tick_rate": 10,
+  "send_timeout_ms": 80,
+  "disconnect_grace_ms": 3000,
+  "resumed": false
 }
 ```
 
 > `you` is your snake's public ID (integer), used to find yourself in the `snakes` array of `state` messages.
+
+If the socket drops unexpectedly, the server keeps a short reconnect grace window. Reconnecting with the same key during `disconnect_grace_ms` returns `resumed: true`, meaning you reattach to the same snake instead of spawning a new one.
+
+Extra `welcome` fields:
+- `send_timeout_ms` — Active server-side threshold for a single WebSocket send
+- `disconnect_grace_ms` — Reconnect grace window for resuming the same snake with the same key
+- `resumed` — Whether this connection resumed an existing snake during the grace window
 
 #### `state` — Game state (every tick)
 
@@ -114,6 +126,7 @@ Received immediately after connecting:
   "type": "state",
   "tick": 1234,
   "you": 1,
+  "tick_rate": 10,
   "field": {"width": 100, "height": 100},
   "snakes": [
     {
@@ -127,7 +140,21 @@ Received immediately after connecting:
     }
   ],
   "foods": [[20, 30], [55, 12]],
-  "record": {"name": "top_player", "length": 58}
+  "record": {"name": "top_player", "length": 58},
+  "performance": [
+    {
+      "id": 1,
+      "name": "Bot_01",
+      "alive": true,
+      "rounds": 4,
+      "completed_rounds": 3,
+      "avg_length": 8.75,
+      "avg_survival_ticks": 42.5,
+      "avg_survival_seconds": 7.08,
+      "best_length": 18,
+      "current_length": 9
+    }
+  ]
 }
 ```
 
@@ -136,8 +163,11 @@ Received immediately after connecting:
 - `snakes[].body` — Array of coordinates, `body[0]` is the head
 - `snakes[].direction` — Current direction: `"up"` / `"down"` / `"left"` / `"right"`
 - `you` — Your public ID (integer)
+- `tick_rate` — Active server tick configuration, useful for per-step timing budgets on the client side
 - `foods` — All food coordinates `[x, y]`
 - `record` — All-time longest snake record: `name` and `length`
+- `performance` — Aggregated bot metrics for dashboard/ops views, including average survival length, average survival time, and sample count
+- `performance[].rounds` — Number of completed lives, plus the current in-progress life if the bot is still alive
 
 #### `death` — Death notification
 
@@ -190,14 +220,40 @@ View current game status and leaderboard (no auth required).
 
 ```json
 {
+  "version": "0.2.0",
   "tick": 5678,
+  "tick_rate": 10,
+  "send_timeout_ms": 80,
+  "disconnect_grace_ms": 3000,
   "players_registered": 15,
   "players_connected": 8,
+  "players_grace_disconnected": 2,
   "snakes_alive": 8,
   "leaderboard": [
     {"name": "Alice", "score": 42, "length": 45},
     {"name": "Bob", "score": 35, "length": 38}
+  ],
+  "performance": [
+    {"name": "Bot_01", "avg_length": 8.75, "avg_survival_seconds": 7.08, "rounds": 4}
   ]
+}
+```
+
+`players_grace_disconnected` is the number of players currently disconnected but still retained inside the reconnect grace window.
+
+- `version` — Current server version
+
+### `GET /api/runtime-config`
+
+Returns runtime config used by the dashboard.
+
+```json
+{
+  "version": "0.2.0",
+  "tick_rate": 10,
+  "send_timeout_ms": 80,
+  "disconnect_grace_ms": 3000,
+  "spectator_reconnect_ms": 2000
 }
 ```
 

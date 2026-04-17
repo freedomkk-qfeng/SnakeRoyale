@@ -1,13 +1,18 @@
+import logging
 import random
-import time
 from dataclasses import dataclass, field
 from typing import Optional
 from collections import deque
 
+from config import TICK_RATE
+
+
+logger = logging.getLogger(__name__)
+
+
 FIELD_WIDTH = 100
 FIELD_HEIGHT = 100
 INITIAL_LENGTH = 3
-TICK_RATE = 10  # ticks per second
 MIN_FOOD = 5
 FOOD_PER_SNAKE = 1
 FOOD_DECAY_RATE = 0.002  # fraction of drop-food removed per tick
@@ -37,15 +42,35 @@ class Snake:
     alive: bool = True
     score: int = 0
     pending_direction: Optional[str] = None
+    life_ticks: int = 0
+    length_accumulator: int = 0
+
+    @property
+    def current_avg_length(self) -> float:
+        if self.life_ticks <= 0:
+            return float(len(self.body)) if self.body else 0.0
+        return self.length_accumulator / self.life_ticks
 
     @property
     def head(self):
         return self.body[0] if self.body else None
 
 
+@dataclass
+class SnakeCareerStats:
+    name: str
+    public_id: int
+    completed_lives: int = 0
+    total_life_ticks: int = 0
+    total_length_accumulator: int = 0
+    best_life_ticks: int = 0
+    best_length: int = 0
+
+
 class Game:
     def __init__(self):
         self.snakes: dict[str, Snake] = {}
+        self.career_stats: dict[str, SnakeCareerStats] = {}
         self.foods: set[tuple[int, int]] = set()
         self._natural_foods: set[tuple[int, int]] = set()  # subset of foods spawned by _ensure_food
         self.tick_count = 0
@@ -98,6 +123,7 @@ class Game:
                 if not any(pos in occupied for pos in body):
                     snake = Snake(id=snake_id, name=name, public_id=public_id, body=body, direction=direction)
                     self.snakes[snake_id] = snake
+                    self._ensure_career_stats(snake)
                     return snake
 
         # Fallback spawn
@@ -109,7 +135,34 @@ class Game:
             direction="right",
         )
         self.snakes[snake_id] = snake
+        self._ensure_career_stats(snake)
         return snake
+
+    def _ensure_career_stats(self, snake: Snake):
+        stats = self.career_stats.get(snake.id)
+        if stats is None:
+            self.career_stats[snake.id] = SnakeCareerStats(name=snake.name, public_id=snake.public_id)
+        else:
+            stats.name = snake.name
+            stats.public_id = snake.public_id
+
+    def _record_alive_tick(self):
+        for snake in self.snakes.values():
+            if not snake.alive:
+                continue
+            snake.life_ticks += 1
+            snake.length_accumulator += len(snake.body)
+
+    def _finalize_life(self, snake: Snake):
+        self._ensure_career_stats(snake)
+        stats = self.career_stats[snake.id]
+        if snake.life_ticks <= 0:
+            return
+        stats.completed_lives += 1
+        stats.total_life_ticks += snake.life_ticks
+        stats.total_length_accumulator += snake.length_accumulator
+        stats.best_life_ticks = max(stats.best_life_ticks, snake.life_ticks)
+        stats.best_length = max(stats.best_length, len(snake.body))
 
     def respawn_snake(self, snake_id: str):
         snake = self.snakes.get(snake_id)
@@ -121,10 +174,14 @@ class Game:
         new_snake = self.spawn_snake(snake_id, name)
         new_snake.public_id = public_id
         new_snake.score = 0
+        if snake_id in self.career_stats:
+            self.career_stats[snake_id].public_id = public_id
         return new_snake
 
     def remove_snake(self, snake_id: str):
-        self.snakes.pop(snake_id, None)
+        snake = self.snakes.pop(snake_id, None)
+        if snake and snake.alive:
+            self._finalize_life(snake)
 
     def set_direction(self, snake_id: str, direction: str):
         snake = self.snakes.get(snake_id)
@@ -152,6 +209,8 @@ class Game:
         """Advance game by one tick. Returns dict of {snake_id: death_reason or None}."""
         self.tick_count += 1
         deaths: dict[str, Optional[str]] = {}
+
+        self._record_alive_tick()
 
         # Apply pending directions
         for snake in self.snakes.values():
@@ -233,6 +292,7 @@ class Game:
         # Mark dead snakes and drop food from their bodies
         for sid, reason in deaths.items():
             snake = self.snakes[sid]
+            self._finalize_life(snake)
             for pos in snake.body:
                 self.foods.add(pos)
             snake.alive = False
@@ -258,6 +318,7 @@ class Game:
         return {
             "type": "state",
             "tick": self.tick_count,
+            "tick_rate": TICK_RATE,
             "field": {"width": FIELD_WIDTH, "height": FIELD_HEIGHT},
             "snakes": [
                 {
@@ -274,9 +335,39 @@ class Game:
             ],
             "foods": list(self.foods),
             "record": {"name": self.record_name, "length": self.record_length},
+            "performance": self.get_performance_stats(),
         }
 
     def get_public_id(self, snake_id: str) -> Optional[int]:
         """Get the public display ID for a snake."""
         snake = self.snakes.get(snake_id)
         return snake.public_id if snake else None
+
+    def get_performance_stats(self) -> list[dict]:
+        performance: list[dict] = []
+
+        for snake_id, stats in self.career_stats.items():
+            snake = self.snakes.get(snake_id)
+            current_ticks = snake.life_ticks if snake and snake.alive else 0
+            current_length_accumulator = snake.length_accumulator if snake and snake.alive else 0
+            sample_lives = stats.completed_lives + (1 if current_ticks > 0 else 0)
+            total_life_ticks = stats.total_life_ticks + current_ticks
+            total_length_accumulator = stats.total_length_accumulator + current_length_accumulator
+            avg_survival_ticks = total_life_ticks / sample_lives if sample_lives else 0.0
+            avg_length = total_length_accumulator / total_life_ticks if total_life_ticks else 0.0
+
+            performance.append({
+                "id": stats.public_id,
+                "name": stats.name,
+                "alive": bool(snake and snake.alive),
+                "rounds": sample_lives,
+                "completed_rounds": stats.completed_lives,
+                "avg_length": round(avg_length, 2),
+                "avg_survival_ticks": round(avg_survival_ticks, 2),
+                "avg_survival_seconds": round(avg_survival_ticks / TICK_RATE, 2),
+                "best_length": max(stats.best_length, len(snake.body) if snake and snake.alive else 0),
+                "current_length": len(snake.body) if snake and snake.alive else 0,
+            })
+
+        performance.sort(key=lambda item: (-item["avg_survival_seconds"], -item["avg_length"], item["name"]))
+        return performance

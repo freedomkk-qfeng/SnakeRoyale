@@ -3,6 +3,11 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
+    environment:
+      SNAKE_TICK_RATE: "10"
+      SNAKE_SEND_TIMEOUT_MS: "80"
+      SNAKE_DISCONNECT_GRACE_MS: "3000"
+      SNAKE_SPECTATOR_RECONNECT_MS: "2000"
     ports:
       - "15000:15000"
     restart: unless-stopped

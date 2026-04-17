@@ -38,14 +38,42 @@
     padding: 12px 24px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 16px;
+    flex-wrap: wrap;
+  }
+  .topbar-left,
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .topbar-logo {
     width: 32px; height: 32px;
     background: linear-gradient(135deg, var(--accent), var(--accent-rose));
     border-radius: 8px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px;
+  }
+  .topbar-logo svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: #fff;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .topbar-title {
     font-size: 18px; font-weight: 700;
@@ -53,21 +81,68 @@
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     background-clip: text;
   }
+  .topbar-link,
+  .topbar-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(18, 18, 42, 0.9);
+  }
   .topbar-link {
-    margin-left: auto;
     color: var(--accent-soft);
     text-decoration: none;
     font-size: 14px;
     font-weight: 500;
-    padding: 6px 14px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
     transition: all 150ms;
   }
   .topbar-link:hover {
     background: var(--accent);
     color: #fff;
     border-color: var(--accent);
+  }
+  .topbar-chip {
+    color: var(--text);
+  }
+  .repo-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 999px;
+    transition: color 150ms ease, background 150ms ease;
+  }
+  .repo-link:hover {
+    color: var(--text);
+    background: rgba(124, 58, 237, 0.14);
+  }
+  .repo-link:focus-visible {
+    outline: 2px solid rgba(167, 139, 250, 0.75);
+    outline-offset: 2px;
+  }
+  .repo-icon {
+    width: 19px;
+    height: 19px;
+    fill: currentColor;
+  }
+  .chip-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .chip-value {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-soft);
   }
   .container {
     max-width: 860px;
@@ -163,8 +238,6 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
-    margin-left: auto;
-    margin-right: 12px;
   }
   .lang-toggle button {
     background: none;
@@ -181,18 +254,57 @@
     background: var(--accent);
     color: #fff;
   }
+  @media (max-width: 720px) {
+    .topbar {
+      padding: 12px 14px;
+    }
+    .topbar-left,
+    .topbar-right {
+      width: 100%;
+    }
+    .container {
+      padding: 28px 16px 64px;
+    }
+  }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="topbar-logo">🐍</div>
-  <span class="topbar-title" id="topbarTitle">API 文档</span>
-  <div class="lang-toggle">
-    <button id="langZh" class="active">中文</button>
-    <button id="langEn">EN</button>
+  <div class="topbar-left">
+    <div class="topbar-logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M6 7c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4 0 1.7-1 3.1-2.5 3.7l-4.3 1.8A3 3 0 0 0 9 15.3V17a3 3 0 0 0 3 3h2" />
+        <path d="M16.5 7.5h.01" />
+        <path d="M14 20h4" />
+      </svg>
+    </div>
+    <span class="topbar-title" id="topbarTitle">API 文档</span>
   </div>
-  <a class="topbar-link" href="/" id="topbarBack">← 返回 Dashboard</a>
+  <div class="topbar-right">
+    <div class="lang-toggle">
+      <button id="langZh" class="active">中文</button>
+      <button id="langEn">EN</button>
+    </div>
+    <a
+      class="repo-link"
+      href="https://github.com/freedomkk-qfeng/SnakeRoyale"
+      target="_blank"
+      rel="noreferrer"
+      title="GitHub"
+      aria-label="GitHub repository"
+    >
+      <svg class="repo-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.1 0 0 .67-.21 2.2.82A7.65 7.65 0 0 1 8 4.69a7.65 7.65 0 0 1 2.01.27c1.53-1.04 2.2-.82 2.2-.82.44 1.09.16 1.9.08 2.1.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+      </svg>
+      <span class="sr-only" id="repoLabel">GitHub Repository</span>
+    </a>
+    <div class="topbar-chip">
+      <span class="chip-label" id="versionLabel">版本</span>
+      <span class="chip-value" id="projectVersion">v--</span>
+    </div>
+    <a class="topbar-link" href="/" id="topbarBack">← 返回 Dashboard</a>
+  </div>
 </div>
 
 <div class="container">
@@ -202,6 +314,7 @@
 <script>
 const mdCache = {};
 let currentLang = localStorage.getItem('snakeLang') || 'zh';
+let runtimeConfig = { version: null };
 
 marked.setOptions({
   highlight: function(code, lang) {
@@ -225,15 +338,30 @@ async function renderDocs(lang) {
   localStorage.setItem('snakeLang', lang);
   document.getElementById('topbarTitle').textContent = lang === 'en' ? 'API Docs' : 'API 文档';
   document.getElementById('topbarBack').textContent = lang === 'en' ? '← Dashboard' : '← 返回 Dashboard';
+  document.getElementById('versionLabel').textContent = lang === 'en' ? 'Version' : '版本';
+  document.getElementById('repoLabel').textContent = lang === 'en' ? 'GitHub Repository' : 'GitHub 仓库';
   document.getElementById('langZh').className = lang === 'zh' ? 'active' : '';
   document.getElementById('langEn').className = lang === 'en' ? 'active' : '';
   const md = await fetchMd(lang);
   document.getElementById('content').innerHTML = marked.parse(md);
 }
 
+async function loadRuntimeConfig() {
+  try {
+    const response = await fetch('/api/runtime-config', { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!data || typeof data !== 'object') return;
+    runtimeConfig = { ...runtimeConfig, ...data };
+    document.getElementById('projectVersion').textContent = data.version ? `v${data.version}` : 'v--';
+  } catch (e) {
+    // Keep the fallback version chip when runtime config is unavailable.
+  }
+}
+
 document.getElementById('langZh').addEventListener('click', () => renderDocs('zh'));
 document.getElementById('langEn').addEventListener('click', () => renderDocs('en'));
-renderDocs(currentLang);
+loadRuntimeConfig().finally(() => renderDocs(currentLang));
 </script>
 </body>
 </html>

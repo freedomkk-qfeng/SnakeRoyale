@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from collections import deque
 
@@ -19,6 +20,15 @@ import aiohttp
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def read_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 DIRECTIONS = {
     "up": (0, -1),
@@ -202,16 +212,25 @@ async def main():
     parser = argparse.ArgumentParser(description="Snake Online AI Client")
     parser.add_argument("--server", default="http://localhost:15000", help="Server URL")
     parser.add_argument("--name", required=True, help="Player name")
+    parser.add_argument(
+        "--reconnect-delay-ms",
+        type=int,
+        default=read_positive_int_env("SNAKE_CLIENT_RECONNECT_DELAY_MS", 3000),
+        help="Reconnect delay in milliseconds (default: env SNAKE_CLIENT_RECONNECT_DELAY_MS or 3000)",
+    )
     args = parser.parse_args()
 
     key = await register(args.server, args.name)
+    reconnect_delay_seconds = max(args.reconnect_delay_ms, 1) / 1000.0
 
     for attempt in range(100):
         try:
             await play(args.server, key)
         except Exception as e:
-            logger.warning(f"Disconnected: {e}, reconnecting in 3s... (attempt {attempt + 1})")
-            await asyncio.sleep(3)
+            logger.warning(
+                f"Disconnected: {e}, reconnecting in {reconnect_delay_seconds:.2f}s... (attempt {attempt + 1})"
+            )
+            await asyncio.sleep(reconnect_delay_seconds)
 
 
 if __name__ == "__main__":
