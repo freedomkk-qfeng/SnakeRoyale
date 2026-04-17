@@ -93,9 +93,12 @@ class Game:
         # fallback: just return random pos
         return (random.randint(0, FIELD_WIDTH - 1), random.randint(0, FIELD_HEIGHT - 1))
 
-    def spawn_snake(self, snake_id: str, name: str) -> Snake:
-        public_id = self._next_public_id
-        self._next_public_id += 1
+    def spawn_snake(self, snake_id: str, name: str, public_id: Optional[int] = None) -> Snake:
+        if public_id is None:
+            public_id = self._next_public_id
+            self._next_public_id += 1
+        else:
+            self._next_public_id = max(self._next_public_id, public_id + 1)
         # Find a safe spawn area: need INITIAL_LENGTH consecutive cells
         for _ in range(100):
             direction = random.choice(["up", "down", "left", "right"])
@@ -171,8 +174,7 @@ class Game:
         name = snake.name
         public_id = snake.public_id
         del self.snakes[snake_id]
-        new_snake = self.spawn_snake(snake_id, name)
-        new_snake.public_id = public_id
+        new_snake = self.spawn_snake(snake_id, name, public_id=public_id)
         new_snake.score = 0
         if snake_id in self.career_stats:
             self.career_stats[snake_id].public_id = public_id

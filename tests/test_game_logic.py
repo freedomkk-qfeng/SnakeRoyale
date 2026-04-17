@@ -16,6 +16,7 @@ class GameLogicTests(unittest.TestCase):
         snake = game.spawn_snake("k1", "Alpha")
         snake.score = 7
         public_id = snake.public_id
+        next_public_id_before = game._next_public_id
 
         respawned = game.respawn_snake("k1")
 
@@ -23,6 +24,7 @@ class GameLogicTests(unittest.TestCase):
         self.assertEqual(respawned.public_id, public_id)
         self.assertEqual(respawned.score, 0)
         self.assertEqual(game.get_public_id("k1"), public_id)
+        self.assertEqual(game._next_public_id, next_public_id_before)
 
     def test_remove_snake_finalizes_live_statistics(self):
         game = self.game_module.Game()

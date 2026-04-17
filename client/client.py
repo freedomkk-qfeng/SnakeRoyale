@@ -223,12 +223,14 @@ async def main():
     key = await register(args.server, args.name)
     reconnect_delay_seconds = max(args.reconnect_delay_ms, 1) / 1000.0
 
-    for attempt in range(100):
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             await play(args.server, key)
         except Exception as e:
             logger.warning(
-                f"Disconnected: {e}, reconnecting in {reconnect_delay_seconds:.2f}s... (attempt {attempt + 1})"
+                f"Disconnected: {e}, reconnecting in {reconnect_delay_seconds:.2f}s... (attempt {attempt})"
             )
             await asyncio.sleep(reconnect_delay_seconds)
 

@@ -33,12 +33,14 @@ async def run_one(server: str, name: str, reconnect_delay_ms: int):
     """Run a single client with reconnection."""
     key = await snake_client.register(server, name)
     reconnect_delay_seconds = max(reconnect_delay_ms, 1) / 1000.0
-    for attempt in range(100):
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             await snake_client.play(server, key)
         except Exception as e:
             logger.warning(
-                f"[{name}] Disconnected: {e}, reconnecting in {reconnect_delay_seconds:.2f}s... (attempt {attempt + 1})"
+                f"[{name}] Disconnected: {e}, reconnecting in {reconnect_delay_seconds:.2f}s... (attempt {attempt})"
             )
             await asyncio.sleep(reconnect_delay_seconds)
 

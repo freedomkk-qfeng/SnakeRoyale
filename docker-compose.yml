@@ -10,11 +10,18 @@ services:
       SNAKE_SPECTATOR_RECONNECT_MS: "2000"
     ports:
       - "15000:15000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:15000/status', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
 
   bot:
     build: ./client
     command: ["-n", "20", "--server", "http://server:15000", "--prefix", "Bot"]
     depends_on:
-      - server
+      server:
+        condition: service_healthy
     restart: unless-stopped

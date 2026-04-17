@@ -3,6 +3,7 @@ import json
 import unittest
 
 import aiohttp
+from aiohttp.client_exceptions import WSServerHandshakeError
 
 from test_support import ServerModuleLoader, start_app
 
@@ -78,6 +79,39 @@ class ServerE2ETests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(welcome["send_timeout_ms"], 120)
         self.assertEqual(welcome["disconnect_grace_ms"], 300)
         self.assertFalse(welcome["resumed"])
+
+    async def test_register_rejects_duplicate_name(self):
+        await self.register_player("SameName")
+
+        async with self.session.post(f"{self.base_url}/register", json={"name": "SameName"}) as response:
+            self.assertEqual(response.status, 409)
+            payload = await response.json()
+
+        self.assertEqual(payload["error"], "name already taken")
+
+    async def test_register_rejects_invalid_json_and_too_long_name(self):
+        async with self.session.post(
+            f"{self.base_url}/register",
+            data="{bad-json",
+            headers={"Content-Type": "application/json"},
+        ) as response:
+            self.assertEqual(response.status, 400)
+            invalid_payload = await response.json()
+
+        self.assertEqual(invalid_payload["error"], "invalid JSON")
+
+        async with self.session.post(f"{self.base_url}/register", json={"name": "X" * 21}) as response:
+            self.assertEqual(response.status, 400)
+            long_name_payload = await response.json()
+
+        self.assertEqual(long_name_payload["error"], "name too long (max 20 chars)")
+
+    async def test_invalid_key_websocket_is_rejected(self):
+        ws_url = f"{self.base_url}/ws?key=invalid".replace("http://", "ws://")
+        with self.assertRaises(WSServerHandshakeError) as ctx:
+            await self.session.ws_connect(ws_url)
+
+        self.assertEqual(ctx.exception.status, 401)
 
     async def test_player_and_spectator_receive_live_state(self):
         registration = await self.register_player("ArenaBot")

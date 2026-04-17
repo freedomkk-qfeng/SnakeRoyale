@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 HOST = "0.0.0.0"
 PORT = 15000
 GAME_TASK_KEY = web.AppKey("game_task", asyncio.Task)
+STATE_KEY = web.AppKey("runtime_state", "ServerRuntime")
 STATIC_DIR_KEY = web.AppKey("static_dir", str)
 CLIENT_PY_KEY = web.AppKey("client_py", str)
 DOCS_DIR_KEY = web.AppKey("docs_dir", str)
@@ -46,7 +47,7 @@ class OutboundMailbox:
     closed: bool = False
 
 
-@dataclass
+@dataclass(eq=False)
 class PlayerConnection:
     key: str
     name: str
@@ -55,20 +56,22 @@ class PlayerConnection:
     sender_task: asyncio.Task | None = None
 
 
-@dataclass
+@dataclass(eq=False)
 class SpectatorConnection:
     ws: web.WebSocketResponse
     mailbox: OutboundMailbox
     sender_task: asyncio.Task | None = None
 
-# In-memory storage
-registered_players: dict[str, str] = {}  # key -> name
-connected_clients: dict[str, PlayerConnection] = {}
-spectators: list[SpectatorConnection] = []
-disconnected_players: dict[str, float] = {}
-connection_state_lock = asyncio.Lock()
 
-game = Game()
+@dataclass
+class ServerRuntime:
+    game: Game = field(default_factory=Game)
+    registered_players: dict[str, str] = field(default_factory=dict)
+    player_keys_by_name: dict[str, str] = field(default_factory=dict)
+    connected_clients: dict[str, PlayerConnection] = field(default_factory=dict)
+    spectators: set[SpectatorConnection] = field(default_factory=set)
+    disconnected_players: dict[str, float] = field(default_factory=dict)
+    connection_state_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 async def send_json_with_timeout(ws: web.WebSocketResponse, payload: dict):
@@ -122,19 +125,19 @@ async def send_batch(ws: web.WebSocketResponse, batch: list[OutboundMessage]):
             await send_text_with_timeout(ws, message.payload)
 
 
-async def disconnect_player(key: str, ws: web.WebSocketResponse, reason: str):
+async def disconnect_player(state: ServerRuntime, key: str, ws: web.WebSocketResponse, reason: str):
     mailbox = None
-    async with connection_state_lock:
-        connection = connected_clients.get(key)
+    async with state.connection_state_lock:
+        connection = state.connected_clients.get(key)
         if connection is not None and connection.ws is ws:
-            connected_clients.pop(key, None)
-            disconnected_players.pop(key, None)
-            if key in game.snakes:
+            state.connected_clients.pop(key, None)
+            state.disconnected_players.pop(key, None)
+            if key in state.game.snakes:
                 if DISCONNECT_GRACE_SECONDS > 0:
-                    disconnected_players[key] = time.monotonic() + DISCONNECT_GRACE_SECONDS
+                    state.disconnected_players[key] = time.monotonic() + DISCONNECT_GRACE_SECONDS
                     logger.info("Player disconnected: %s, grace %.2fs (%s)", connection.name, DISCONNECT_GRACE_SECONDS, reason)
                 else:
-                    game.remove_snake(key)
+                    state.game.remove_snake(key)
                     logger.info("Player disconnected: %s, removed immediately (%s)", connection.name, reason)
             mailbox = connection.mailbox
 
@@ -146,52 +149,50 @@ async def disconnect_player(key: str, ws: web.WebSocketResponse, reason: str):
             await ws.close()
 
 
-async def disconnect_spectator(connection: SpectatorConnection, reason: str):
-    for index, existing in enumerate(list(spectators)):
-        if existing is connection:
-            spectators.pop(index)
-            break
+async def disconnect_spectator(state: ServerRuntime, connection: SpectatorConnection, reason: str):
+    async with state.connection_state_lock:
+        state.spectators.discard(connection)
     await close_mailbox(connection.mailbox)
     if not connection.ws.closed:
         with contextlib.suppress(Exception):
             await connection.ws.close()
-    logger.info("Spectator disconnected (total: %s, %s)", len(spectators), reason)
+    logger.info("Spectator disconnected (total: %s, %s)", len(state.spectators), reason)
 
 
-async def ensure_player_snake(key: str, name: str) -> tuple[int | None, bool]:
-    async with connection_state_lock:
-        disconnected_players.pop(key, None)
-        snake = game.snakes.get(key)
+async def ensure_player_snake(state: ServerRuntime, key: str, name: str) -> tuple[int | None, bool]:
+    async with state.connection_state_lock:
+        state.disconnected_players.pop(key, None)
+        snake = state.game.snakes.get(key)
         resumed = snake is not None
         if snake is None:
-            snake = game.spawn_snake(key, name)
+            snake = state.game.spawn_snake(key, name)
         else:
             snake.name = name
             if not snake.alive:
-                snake = game.respawn_snake(key)
-        return game.get_public_id(key), resumed
+                snake = state.game.respawn_snake(key)
+        return state.game.get_public_id(key), resumed
 
 
-async def expire_disconnected_players():
-    if not disconnected_players:
+async def expire_disconnected_players(state: ServerRuntime):
+    if not state.disconnected_players:
         return
     now = time.monotonic()
     expired: list[tuple[str, str]] = []
-    async with connection_state_lock:
-        for key in list(disconnected_players):
-            deadline = disconnected_players.get(key)
+    async with state.connection_state_lock:
+        for key in list(state.disconnected_players):
+            deadline = state.disconnected_players.get(key)
             if deadline is None or deadline > now:
                 continue
-            disconnected_players.pop(key, None)
-            if key in connected_clients:
+            state.disconnected_players.pop(key, None)
+            if key in state.connected_clients:
                 continue
-            expired.append((key, registered_players.get(key, key[:4])))
-            game.remove_snake(key)
+            expired.append((key, state.registered_players.get(key, key[:4])))
+            state.game.remove_snake(key)
     for _, name in expired:
         logger.info("Disconnected grace expired for %s", name)
 
 
-async def player_sender(connection: PlayerConnection):
+async def player_sender(state: ServerRuntime, connection: PlayerConnection):
     try:
         while True:
             batch = await pop_next_batch(connection.mailbox)
@@ -201,10 +202,10 @@ async def player_sender(connection: PlayerConnection):
     except Exception as exc:
         logger.warning("Output stream failed for %s: %s", connection.name, exc)
     finally:
-        await disconnect_player(connection.key, connection.ws, "sender task ended")
+        await disconnect_player(state, connection.key, connection.ws, "sender task ended")
 
 
-async def spectator_sender(connection: SpectatorConnection):
+async def spectator_sender(state: ServerRuntime, connection: SpectatorConnection):
     try:
         while True:
             batch = await pop_next_batch(connection.mailbox)
@@ -214,10 +215,11 @@ async def spectator_sender(connection: SpectatorConnection):
     except Exception as exc:
         logger.warning("Spectator output stream failed: %s", exc)
     finally:
-        await disconnect_spectator(connection, "sender task ended")
+        await disconnect_spectator(state, connection, "sender task ended")
 
 
 async def handle_register(request: web.Request):
+    state = request.app[STATE_KEY]
     try:
         data = await request.json()
     except Exception:
@@ -229,38 +231,40 @@ async def handle_register(request: web.Request):
     if len(name) > 20:
         return web.json_response({"error": "name too long (max 20 chars)"}, status=400)
 
-    # Check duplicate name
-    for existing_name in registered_players.values():
-        if existing_name == name:
+    async with state.connection_state_lock:
+        if name in state.player_keys_by_name:
             return web.json_response({"error": "name already taken"}, status=409)
 
-    key = uuid.uuid4().hex[:16]
-    registered_players[key] = name
-    logger.info(f"Player registered: {name} (key={key[:4]}...)")
+        key = uuid.uuid4().hex[:16]
+        state.registered_players[key] = name
+        state.player_keys_by_name[name] = key
+
+    logger.info("Player registered: %s (key=%s...)", name, key[:4])
     return web.json_response({"key": key, "name": name})
 
 
 async def handle_ws(request: web.Request):
+    state = request.app[STATE_KEY]
     key = request.query.get("key", "")
-    if key not in registered_players:
+    if key not in state.registered_players:
         return web.Response(text="invalid key", status=401)
 
-    if key in connected_clients:
+    if key in state.connected_clients:
         return web.Response(text="already connected", status=409)
 
-    name = registered_players[key]
+    name = state.registered_players[key]
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
     mailbox = OutboundMailbox()
     connection = PlayerConnection(key=key, name=name, ws=ws, mailbox=mailbox)
-    async with connection_state_lock:
-        if key in connected_clients:
+    async with state.connection_state_lock:
+        if key in state.connected_clients:
             await ws.close()
             return ws
-        connected_clients[key] = connection
+        state.connected_clients[key] = connection
 
-    public_id, resumed = await ensure_player_snake(key, name)
+    public_id, resumed = await ensure_player_snake(state, key, name)
     logger.info("Player connected: %s (%s)", name, "resume" if resumed else "spawn")
 
     # Send initial welcome
@@ -276,10 +280,10 @@ async def handle_ws(request: web.Request):
             "resumed": resumed,
         })
     except Exception:
-        await disconnect_player(key, ws, "welcome failed")
+        await disconnect_player(state, key, ws, "welcome failed")
         return ws
 
-    connection.sender_task = asyncio.create_task(player_sender(connection))
+    connection.sender_task = asyncio.create_task(player_sender(state, connection))
 
     try:
         async for msg in ws:
@@ -290,54 +294,57 @@ async def handle_ws(request: web.Request):
                     continue
                 if data.get("type") == "move":
                     direction = data.get("direction", "")
-                    game.set_direction(key, direction)
+                    state.game.set_direction(key, direction)
             elif msg.type == web.WSMsgType.ERROR:
-                logger.error(f"WS error for {name}: {ws.exception()}")
+                logger.error("WS error for %s: %s", name, ws.exception())
     finally:
-        await disconnect_player(key, ws, "ws loop ended")
+        await disconnect_player(state, key, ws, "ws loop ended")
 
     return ws
 
 
 async def handle_spectate(request: web.Request):
     """WebSocket endpoint for dashboard spectators (no auth needed)."""
+    state = request.app[STATE_KEY]
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     mailbox = OutboundMailbox()
     connection = SpectatorConnection(ws=ws, mailbox=mailbox)
-    spectators.append(connection)
-    connection.sender_task = asyncio.create_task(spectator_sender(connection))
-    logger.info(f"Spectator connected (total: {len(spectators)})")
+    async with state.connection_state_lock:
+        state.spectators.add(connection)
+    connection.sender_task = asyncio.create_task(spectator_sender(state, connection))
+    logger.info("Spectator connected (total: %s)", len(state.spectators))
     try:
         async for msg in ws:
             pass  # Spectators don't send anything meaningful
     finally:
-        await disconnect_spectator(connection, "spectate ws loop ended")
+        await disconnect_spectator(state, connection, "spectate ws loop ended")
     return ws
 
 
 async def game_loop(app: web.Application):
-    logger.info(f"Game loop started (tick rate: {TICK_RATE}/s)")
+    state = app[STATE_KEY]
+    logger.info("Game loop started (tick rate: %s/s)", TICK_RATE)
     tick_interval = 1.0 / TICK_RATE
 
     while True:
         t0 = time.monotonic()
-        await expire_disconnected_players()
+        await expire_disconnected_players(state)
 
         # Always advance game tick (even with 0 players, spectators need state)
-        deaths = game.tick()
-        state = game.get_state()
+        deaths = state.game.tick()
+        game_state = state.game.get_state()
 
         for key in deaths:
-            if key in game.snakes:
-                game.respawn_snake(key)
+            if key in state.game.snakes:
+                state.game.respawn_snake(key)
 
         # Fan out state into independent per-client sender tasks.
-        for key, connection in list(connected_clients.items()):
+        for key, connection in list(state.connected_clients.items()):
             if connection.ws.closed:
-                await disconnect_player(key, connection.ws, "socket already closed")
+                await disconnect_player(state, key, connection.ws, "socket already closed")
                 continue
-            batch = [OutboundMessage("json", {**state, "you": game.get_public_id(key)})]
+            batch = [OutboundMessage("json", {**game_state, "you": state.game.get_public_id(key)})]
             if key in deaths:
                 batch.append(OutboundMessage("json", {
                     "type": "death",
@@ -347,11 +354,11 @@ async def game_loop(app: web.Application):
             await push_state_batch(connection.mailbox, batch)
 
         # Broadcast to spectators (dashboard)
-        if spectators:
-            state_json = json.dumps(state)
-            for connection in list(spectators):
+        if state.spectators:
+            state_json = json.dumps(game_state)
+            for connection in list(state.spectators):
                 if connection.ws.closed:
-                    await disconnect_spectator(connection, "socket already closed")
+                    await disconnect_spectator(state, connection, "socket already closed")
                     continue
                 await push_state_batch(connection.mailbox, [OutboundMessage("text", state_json)])
 
@@ -365,35 +372,37 @@ async def start_game_loop(app: web.Application):
 
 
 async def stop_game_loop(app: web.Application):
+    state = app[STATE_KEY]
     app[GAME_TASK_KEY].cancel()
     try:
         await app[GAME_TASK_KEY]
     except asyncio.CancelledError:
         pass
-    for connection in list(connected_clients.values()):
-        await disconnect_player(connection.key, connection.ws, "server shutdown")
-    for connection in list(spectators):
-        await disconnect_spectator(connection, "server shutdown")
+    for connection in list(state.connected_clients.values()):
+        await disconnect_player(state, connection.key, connection.ws, "server shutdown")
+    for connection in list(state.spectators):
+        await disconnect_spectator(state, connection, "server shutdown")
 
 
 async def handle_status(request: web.Request):
-    alive = [s for s in game.snakes.values() if s.alive]
+    state = request.app[STATE_KEY]
+    alive = [s for s in state.game.snakes.values() if s.alive]
     return web.json_response({
         "version": PROJECT_VERSION,
-        "tick": game.tick_count,
+        "tick": state.game.tick_count,
         "tick_rate": TICK_RATE,
         "send_timeout_ms": SEND_TIMEOUT_MS,
         "disconnect_grace_ms": DISCONNECT_GRACE_MS,
-        "players_registered": len(registered_players),
-        "players_connected": len(connected_clients),
-        "players_grace_disconnected": len(disconnected_players),
+        "players_registered": len(state.registered_players),
+        "players_connected": len(state.connected_clients),
+        "players_grace_disconnected": len(state.disconnected_players),
         "snakes_alive": len(alive),
         "leaderboard": sorted(
             [{"name": s.name, "score": s.score, "length": len(s.body)} for s in alive],
             key=lambda x: x["score"],
             reverse=True,
         )[:20],
-        "performance": game.get_performance_stats()[:20],
+        "performance": state.game.get_performance_stats()[:20],
     })
 
 
@@ -427,8 +436,10 @@ async def handle_download_client(request: web.Request):
 
 async def handle_client_source(request: web.Request):
     client_py = request.app[CLIENT_PY_KEY]
-    with open(client_py, "r", encoding="utf-8") as f:
-        return web.Response(text=f.read(), content_type="text/plain")
+    return web.FileResponse(
+        client_py,
+        headers={"Content-Type": "text/plain; charset=utf-8"},
+    )
 
 
 async def handle_docs_zh(request: web.Request):
@@ -449,6 +460,7 @@ async def handle_docs_en(request: web.Request):
 
 def create_app():
     app = web.Application()
+    app[STATE_KEY] = ServerRuntime()
     app.router.add_post("/register", handle_register)
     app.router.add_get("/ws", handle_ws)
     app.router.add_get("/spectate", handle_spectate)
@@ -475,5 +487,5 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    logger.info(f"Starting Snake Online server on {HOST}:{PORT}")
+    logger.info("Starting Snake Online server on %s:%s", HOST, PORT)
     web.run_app(app, host=HOST, port=PORT, print=None)
