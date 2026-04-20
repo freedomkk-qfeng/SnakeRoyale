@@ -12,6 +12,8 @@ from aiohttp import web
 from config import (
     DISCONNECT_GRACE_MS,
     DISCONNECT_GRACE_SECONDS,
+    MAX_REGISTERED_PLAYERS,
+    MAX_SPECTATORS,
     PROJECT_VERSION,
     SEND_TIMEOUT_MS,
     SEND_TIMEOUT_SECONDS,
@@ -112,6 +114,7 @@ async def pop_next_batch(mailbox: OutboundMailbox) -> list[OutboundMessage] | No
                 mailbox.event.clear()
                 continue
 
+            # Clear the event only after the current batch is claimed so future pushes re-arm it.
             if mailbox.latest_batch is None and not mailbox.closed:
                 mailbox.event.clear()
             return batch
@@ -234,6 +237,8 @@ async def handle_register(request: web.Request):
     async with state.connection_state_lock:
         if name in state.player_keys_by_name:
             return web.json_response({"error": "name already taken"}, status=409)
+        if MAX_REGISTERED_PLAYERS > 0 and len(state.registered_players) >= MAX_REGISTERED_PLAYERS:
+            return web.json_response({"error": "player limit reached"}, status=503)
 
         key = uuid.uuid4().hex[:16]
         state.registered_players[key] = name
@@ -306,11 +311,19 @@ async def handle_ws(request: web.Request):
 async def handle_spectate(request: web.Request):
     """WebSocket endpoint for dashboard spectators (no auth needed)."""
     state = request.app[STATE_KEY]
+
+    async with state.connection_state_lock:
+        if MAX_SPECTATORS > 0 and len(state.spectators) >= MAX_SPECTATORS:
+            return web.Response(text="spectator limit reached", status=503)
+
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     mailbox = OutboundMailbox()
     connection = SpectatorConnection(ws=ws, mailbox=mailbox)
     async with state.connection_state_lock:
+        if MAX_SPECTATORS > 0 and len(state.spectators) >= MAX_SPECTATORS:
+            await ws.close()
+            return ws
         state.spectators.add(connection)
     connection.sender_task = asyncio.create_task(spectator_sender(state, connection))
     logger.info("Spectator connected (total: %s)", len(state.spectators))
@@ -329,38 +342,43 @@ async def game_loop(app: web.Application):
 
     while True:
         t0 = time.monotonic()
-        await expire_disconnected_players(state)
+        try:
+            await expire_disconnected_players(state)
 
-        # Always advance game tick (even with 0 players, spectators need state)
-        deaths = state.game.tick()
-        game_state = state.game.get_state()
+            # Always advance game tick (even with 0 players, spectators need state)
+            deaths = state.game.tick()
+            game_state = state.game.get_state()
 
-        for key in deaths:
-            if key in state.game.snakes:
-                state.game.respawn_snake(key)
+            for key in deaths:
+                if key in state.game.snakes:
+                    state.game.respawn_snake(key)
 
-        # Fan out state into independent per-client sender tasks.
-        for key, connection in list(state.connected_clients.items()):
-            if connection.ws.closed:
-                await disconnect_player(state, key, connection.ws, "socket already closed")
-                continue
-            batch = [OutboundMessage("json", {**game_state, "you": state.game.get_public_id(key)})]
-            if key in deaths:
-                batch.append(OutboundMessage("json", {
-                    "type": "death",
-                    "reason": deaths[key],
-                }))
-                batch.append(OutboundMessage("json", {"type": "respawn"}))
-            await push_state_batch(connection.mailbox, batch)
-
-        # Broadcast to spectators (dashboard)
-        if state.spectators:
-            state_json = json.dumps(game_state)
-            for connection in list(state.spectators):
+            # Fan out state into independent per-client sender tasks.
+            for key, connection in list(state.connected_clients.items()):
                 if connection.ws.closed:
-                    await disconnect_spectator(state, connection, "socket already closed")
+                    await disconnect_player(state, key, connection.ws, "socket already closed")
                     continue
-                await push_state_batch(connection.mailbox, [OutboundMessage("text", state_json)])
+                batch = [OutboundMessage("json", {**game_state, "you": state.game.get_public_id(key)})]
+                if key in deaths:
+                    batch.append(OutboundMessage("json", {
+                        "type": "death",
+                        "reason": deaths[key],
+                    }))
+                    batch.append(OutboundMessage("json", {"type": "respawn"}))
+                await push_state_batch(connection.mailbox, batch)
+
+            # Broadcast to spectators (dashboard)
+            if state.spectators:
+                state_json = json.dumps(game_state)
+                for connection in list(state.spectators):
+                    if connection.ws.closed:
+                        await disconnect_spectator(state, connection, "socket already closed")
+                        continue
+                    await push_state_batch(connection.mailbox, [OutboundMessage("text", state_json)])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Game loop iteration failed")
 
         elapsed = time.monotonic() - t0
         sleep_time = max(0, tick_interval - elapsed)
@@ -393,6 +411,8 @@ async def handle_status(request: web.Request):
         "tick_rate": TICK_RATE,
         "send_timeout_ms": SEND_TIMEOUT_MS,
         "disconnect_grace_ms": DISCONNECT_GRACE_MS,
+        "max_registered_players": MAX_REGISTERED_PLAYERS,
+        "max_spectators": MAX_SPECTATORS,
         "players_registered": len(state.registered_players),
         "players_connected": len(state.connected_clients),
         "players_grace_disconnected": len(state.disconnected_players),
@@ -413,6 +433,8 @@ async def handle_runtime_config(request: web.Request):
         "send_timeout_ms": SEND_TIMEOUT_MS,
         "disconnect_grace_ms": DISCONNECT_GRACE_MS,
         "spectator_reconnect_ms": SPECTATOR_RECONNECT_MS,
+        "max_registered_players": MAX_REGISTERED_PLAYERS,
+        "max_spectators": MAX_SPECTATORS,
     })
 
 

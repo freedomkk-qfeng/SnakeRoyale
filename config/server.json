@@ -1,0 +1,8 @@
+{
+  "tick_rate": 10,
+  "send_timeout_ms": 80,
+  "disconnect_grace_ms": 3000,
+  "spectator_reconnect_ms": 2000,
+  "max_registered_players": 200,
+  "max_spectators": 50
+}

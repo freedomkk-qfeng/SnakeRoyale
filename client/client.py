@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import sys
 from collections import deque
 
@@ -155,22 +156,22 @@ class SnakeAI:
 
 async def register(server_url: str, name: str) -> str:
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{server_url}/register", json={"name": name}) as resp:
-            if resp.status == 409:
-                # Name taken, try with random suffix
-                import random
-                name = f"{name}_{random.randint(100, 999)}"
-                async with session.post(f"{server_url}/register", json={"name": name}) as resp2:
-                    data = await resp2.json()
-                    if resp2.status != 200:
-                        raise RuntimeError(f"Registration failed: {data}")
-                    logger.info(f"Registered as: {data['name']} (key={data['key'][:4]}...)")
-                    return data["key"]
-            data = await resp.json()
-            if resp.status != 200:
+        candidate_name = name
+        for attempt in range(8):
+            async with session.post(f"{server_url}/register", json={"name": candidate_name}) as resp:
+                data = await resp.json()
+
+            if resp.status == 200:
+                logger.info(f"Registered as: {data['name']} (key={data['key'][:4]}...)")
+                return data["key"]
+
+            if resp.status != 409:
                 raise RuntimeError(f"Registration failed: {data}")
-            logger.info(f"Registered as: {data['name']} (key={data['key'][:4]}...)")
-            return data["key"]
+
+            candidate_name = f"{name}_{random.randint(100, 999)}"
+            logger.warning("Name conflict for %s, retrying as %s (attempt %s/8)", name, candidate_name, attempt + 2)
+
+        raise RuntimeError(f"Registration failed after repeated name conflicts for base name {name!r}")
 
 
 async def play(server_url: str, key: str):

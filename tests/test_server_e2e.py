@@ -15,6 +15,8 @@ class ServerE2ETests(unittest.IsolatedAsyncioTestCase):
             SNAKE_SEND_TIMEOUT_MS=120,
             SNAKE_DISCONNECT_GRACE_MS=300,
             SNAKE_SPECTATOR_RECONNECT_MS=900,
+            SNAKE_MAX_REGISTERED_PLAYERS=4,
+            SNAKE_MAX_SPECTATORS=2,
         )
         self.config, self.game_module, self.server_module = self.loader.load()
         self.runner, self.base_url = await start_app(self.server_module)
@@ -69,6 +71,8 @@ class ServerE2ETests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime_config["send_timeout_ms"], 120)
         self.assertEqual(runtime_config["disconnect_grace_ms"], 300)
         self.assertEqual(runtime_config["spectator_reconnect_ms"], 900)
+        self.assertEqual(runtime_config["max_registered_players"], 4)
+        self.assertEqual(runtime_config["max_spectators"], 2)
 
         ws = await self.connect_player(registration["key"])
         welcome = await self.receive_json(ws)
@@ -105,6 +109,16 @@ class ServerE2ETests(unittest.IsolatedAsyncioTestCase):
             long_name_payload = await response.json()
 
         self.assertEqual(long_name_payload["error"], "name too long (max 20 chars)")
+
+    async def test_register_rejects_when_player_limit_reached(self):
+        for index in range(4):
+            await self.register_player(f"Bot{index}")
+
+        async with self.session.post(f"{self.base_url}/register", json={"name": "OverflowBot"}) as response:
+            self.assertEqual(response.status, 503)
+            payload = await response.json()
+
+        self.assertEqual(payload["error"], "player limit reached")
 
     async def test_invalid_key_websocket_is_rejected(self):
         ws_url = f"{self.base_url}/ws?key=invalid".replace("http://", "ws://")
@@ -149,6 +163,21 @@ class ServerE2ETests(unittest.IsolatedAsyncioTestCase):
 
         await player_ws.close()
         await spectator_ws.close()
+
+    async def test_spectate_rejects_when_limit_reached(self):
+        spectator_one = await self.connect_spectator()
+        spectator_two = await self.connect_spectator()
+        await self.receive_json(spectator_one)
+        await self.receive_json(spectator_two)
+
+        ws_url = f"{self.base_url}/spectate".replace("http://", "ws://")
+        with self.assertRaises(WSServerHandshakeError) as ctx:
+            await self.session.ws_connect(ws_url)
+
+        await spectator_one.close()
+        await spectator_two.close()
+
+        self.assertEqual(ctx.exception.status, 503)
 
     async def test_reconnect_within_grace_resumes_same_snake(self):
         registration = await self.register_player("ResumeBot")

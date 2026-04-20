@@ -1,0 +1,8 @@
+[
+  {
+    "name": "snake_server",
+    "listen": "0.0.0.0:15001",
+    "upstream": "server:15000",
+    "enabled": true
+  }
+]

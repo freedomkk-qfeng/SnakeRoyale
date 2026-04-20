@@ -1,6 +1,6 @@
 # SnakeRoyale — API Docs
 
-Current version: `0.2.0`
+Current version: `0.3.0`
 
 ## Overview
 
@@ -18,7 +18,7 @@ SnakeRoyale is a multiplayer online snake battle arena. The server runs the game
 |------|-------|
 | Field size | 100 × 100 cells |
 | Coordinates | (0,0) is top-left, x grows right, y grows down |
-| Tick rate | Configurable via `SNAKE_TICK_RATE` (default: 10/sec) |
+| Tick rate | Configurable via `config/server.json` or `SNAKE_TICK_RATE` override (default: 10/sec) |
 | Initial length | 3 |
 | Death conditions | Hit wall / self / other snake / head-on collision |
 | On death | Auto-respawn at random position, length reset to 3, score reset to 0 |
@@ -51,6 +51,7 @@ Register a player name and get a game key.
 **Errors:**
 - `400` — name is empty, exceeds 20 characters, or invalid JSON
 - `409` — name already taken
+- `503` — registered-player limit reached
 
 > ⚠️ Save your `key` — you'll need it for all subsequent operations.
 
@@ -86,6 +87,13 @@ ws.on('message', (data) => {
     // handle messages...
 });
 ```
+
+### `WebSocket /spectate`
+
+Connect to the dashboard spectator stream. No auth key is required.
+
+- Success: receives the same full-state snapshots used by the live dashboard.
+- Failure: handshake is rejected with `503` when the spectator connection cap is reached.
 
 ---
 
@@ -220,11 +228,13 @@ View current game status and leaderboard (no auth required).
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "tick": 5678,
   "tick_rate": 10,
   "send_timeout_ms": 80,
   "disconnect_grace_ms": 3000,
+  "max_registered_players": 200,
+  "max_spectators": 50,
   "players_registered": 15,
   "players_connected": 8,
   "players_grace_disconnected": 2,
@@ -241,7 +251,11 @@ View current game status and leaderboard (no auth required).
 
 `players_grace_disconnected` is the number of players currently disconnected but still retained inside the reconnect grace window.
 
+This field is also the primary observability hook used in the weak-network Toxiproxy lab to verify that proxy-induced disconnects enter and leave the grace window correctly.
+
 - `version` — Current server version
+- `max_registered_players` — Active registration cap. `0` means unlimited.
+- `max_spectators` — Active spectator cap. `0` means unlimited.
 
 ### `GET /api/runtime-config`
 
@@ -249,11 +263,13 @@ Returns runtime config used by the dashboard.
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "tick_rate": 10,
   "send_timeout_ms": 80,
   "disconnect_grace_ms": 3000,
-  "spectator_reconnect_ms": 2000
+  "spectator_reconnect_ms": 2000,
+  "max_registered_players": 200,
+  "max_spectators": 50
 }
 ```
 
@@ -303,6 +319,8 @@ curl http://<host>:15000/status
 | Invalid direction sent | Server ignores the message |
 | Invalid key | WebSocket connection rejected (401) |
 | Duplicate connection | Rejected (409), disconnect old session first |
+| Registration limit reached | `POST /register` returns 503 |
+| Spectator limit reached | `WS /spectate` handshake rejected (503) |
 
 ---
 

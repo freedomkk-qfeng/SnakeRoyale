@@ -17,10 +17,31 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./config/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - "8474:8474"
+      - "15001:15001"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
   bot:
     build: ./client
     command: ["-n", "20", "--server", "http://server:15000", "--prefix", "Bot"]
     depends_on:
       server:
         condition: service_healthy
+    restart: unless-stopped
+
+  bot_toxic:
+    build: ./client
+    command: ["-n", "5", "--server", "http://toxiproxy:15001", "--prefix", "LagBot"]
+    depends_on:
+      toxiproxy:
+        condition: service_started
     restart: unless-stopped
