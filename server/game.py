@@ -42,6 +42,7 @@ class Snake:
     alive: bool = True
     score: int = 0
     pending_direction: Optional[str] = None
+    pending_state_tick: Optional[int] = None
     life_ticks: int = 0
     length_accumulator: int = 0
 
@@ -74,6 +75,7 @@ class Game:
         self.foods: set[tuple[int, int]] = set()
         self._natural_foods: set[tuple[int, int]] = set()  # subset of foods spawned by _ensure_food
         self.tick_count = 0
+        self.strict_observed_tick = False
         self._next_public_id = 1
         self.record_name: str = "-"
         self.record_length: int = 0
@@ -185,17 +187,20 @@ class Game:
         if snake and snake.alive:
             self._finalize_life(snake)
 
-    def set_direction(self, snake_id: str, direction: str):
+    def set_direction(self, snake_id: str, direction: str, observed_tick: Optional[int] = None):
         snake = self.snakes.get(snake_id)
         if not snake or not snake.alive:
             return
         if direction not in DIRECTIONS:
+            return
+        if self.strict_observed_tick and observed_tick is not None and observed_tick != self.tick_count:
             return
         # Prevent 180-degree turn (check both current and pending direction)
         current = snake.pending_direction or snake.direction
         if OPPOSITE.get(direction) == current:
             return
         snake.pending_direction = direction
+        snake.pending_state_tick = observed_tick
 
     def _ensure_food(self):
         alive_count = sum(1 for s in self.snakes.values() if s.alive)
@@ -219,6 +224,7 @@ class Game:
             if snake.alive and snake.pending_direction:
                 snake.direction = snake.pending_direction
                 snake.pending_direction = None
+                snake.pending_state_tick = None
 
         # Calculate new head positions
         new_heads: dict[str, tuple[int, int]] = {}

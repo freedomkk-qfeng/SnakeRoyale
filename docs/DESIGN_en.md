@@ -1,6 +1,6 @@
 # SnakeRoyale Design
 
-Current version: `0.3.0`
+Current version: `0.4.0`
 
 ## Goals
 
@@ -16,16 +16,30 @@ The design priorities are:
 
 ## High-Level Architecture
 
-The project has three runtime pieces:
+The project now has four main code areas:
 
 1. `server/`
    Runs the game loop, registration API, WebSocket gameplay connections, spectator connections, and dashboard static assets.
 2. `client/`
    Provides a reference AI bot and a batch launcher for classroom demos and smoke testing.
 3. `server/static/`
-   Hosts the dashboard that visualizes the arena, live ranking, and survival statistics.
+   Hosts the dashboard and replay viewer that visualize the arena, live ranking, survival statistics, and benchmark playback.
+4. `benchmark/`
+   Provides local benchmark orchestration, config loading, and summary/report generation for multi-bot evaluation runs.
 
 The server is the single source of truth for simulation state.
+
+### Benchmark / Replay Workflow
+
+0.4.0 adds a local evaluation layer on top of the core game loop.
+
+`benchmark/runner.py` starts the server in-process, launches a configured mixed roster of bots, waits until the benchmark roster is ready, resets the room into a clean measured start, verifies that the roster stays present during the measured window, then records the same authoritative per-tick state snapshots that the live server broadcasts plus that tick's follow-up replay events and writes:
+
+1. `replay.jsonl`: one authoritative live-state snapshot per benchmark tick for playback, plus a unique `benchmark_run_id` in metadata.
+2. `summary.json` / `summary.md`: exact per-bot and per-algorithm benchmark results keyed by the same `benchmark_run_id`.
+3. `roster.json`: the resolved bot names, algorithm labels, and entrypoint mapping for that run.
+
+This extends the project from a live classroom arena into a scriptable algorithm-evaluation workflow.
 
 ## Core Runtime Model
 
@@ -136,7 +150,7 @@ The survival statistics view was added because a single historical max is noisy 
 
 ## Documentation Design
 
-The documentation set is organized into four required parts:
+The documentation set has four core parts and can grow supplementary guides under `docs/` when a topic becomes too large for the README:
 
 1. `README`
    The total entry point for developers, instructors, and contributors.
@@ -146,6 +160,8 @@ The documentation set is organized into four required parts:
    The external contract for clients and dashboard consumers.
 4. `CHANGELOG`
    A versioned record of behavior, protocol, and product changes.
+
+Supplementary guides such as `OPERATIONS` and `BENCHMARK` are used for runbooks and feature-specific workflows.
 
 This structure is intended to make future changes easier to track and explain.
 

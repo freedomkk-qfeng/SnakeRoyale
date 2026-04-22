@@ -3,7 +3,7 @@ WORKDIR /app/server
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY server/ .
-COPY client/client.py /app/client/client.py
+COPY client/ /app/client/
 COPY docs/ /app/docs/
 COPY config/ /app/config/
 EXPOSE 15000

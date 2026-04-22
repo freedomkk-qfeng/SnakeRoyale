@@ -1,0 +1,26 @@
+{
+  "benchmark_name": "mixed-room-demo",
+  "duration_seconds": 120,
+  "server_env": {
+    "SNAKE_TICK_RATE": "8",
+    "SNAKE_SEND_TIMEOUT_MS": "120",
+    "SNAKE_DISCONNECT_GRACE_MS": "0",
+    "SNAKE_MAX_REGISTERED_PLAYERS": "20",
+    "SNAKE_MAX_SPECTATORS": "4"
+  },
+  "bots": [
+    {
+      "algorithm": "bfs",
+      "entrypoint": "client/client.py",
+      "count": 4,
+      "extra_args": ["--reconnect-delay-ms", "200"]
+    },
+    {
+      "algorithm": "random",
+      "entrypoint": "client/random_client.py",
+      "count": 4,
+      "name_prefix": "random",
+      "extra_args": ["--reconnect-delay-ms", "200"]
+    }
+  ]
+}

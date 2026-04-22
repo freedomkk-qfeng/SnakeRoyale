@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnakeRoyale — Replay Viewer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #08131a;
+    --bg-panel: rgba(12, 27, 35, 0.9);
+    --bg-panel-soft: rgba(16, 34, 44, 0.82);
+    --bg-elevated: #122a36;
+    --border: rgba(126, 166, 179, 0.22);
+    --text: #edf6f9;
+    --text-dim: #9cb8c2;
+    --text-muted: #6e8b95;
+    --accent-coral: #ff6b57;
+    --accent-gold: #f6bd60;
+    --accent-teal: #4ecdc4;
+    --accent-lime: #8ac926;
+    --accent-sky: #62b6ff;
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(circle at top left, rgba(255, 107, 87, 0.16), transparent 28%),
+      radial-gradient(circle at top right, rgba(78, 205, 196, 0.14), transparent 26%),
+      linear-gradient(180deg, #08131a 0%, #091922 50%, #071018 100%);
+  }
+
+  .shell {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 22px;
+  }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .brand-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent-coral), var(--accent-gold));
+    box-shadow: 0 14px 28px rgba(255, 107, 87, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .brand-mark svg {
+    width: 24px;
+    height: 24px;
+    stroke: white;
+    fill: none;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--accent-gold);
+  }
+
+  h1 {
+    margin: 2px 0 0;
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 0.95;
+  }
+
+  .subtitle {
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--text-dim);
+    max-width: 720px;
+  }
+
+  .top-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .top-link,
+  .chip,
+  .file-button,
+  .control-btn,
+  .speed-select {
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--text);
+    border-radius: 999px;
+    min-height: 40px;
+    padding: 10px 14px;
+    font: inherit;
+  }
+
+  .top-link,
+  .file-button,
+  .control-btn {
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+  }
+
+  .top-link:hover,
+  .file-button:hover,
+  .control-btn:hover {
+    transform: translateY(-1px);
+    background: var(--bg-elevated);
+    border-color: rgba(246, 189, 96, 0.4);
+  }
+
+  .chip {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .chip strong {
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+  }
+
+  .hero-grid,
+  .content-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .hero-grid {
+    grid-template-columns: 1fr;
+    margin-bottom: 18px;
+  }
+
+  .content-grid {
+    grid-template-columns: minmax(0, 1.12fr) 360px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--bg-panel-soft);
+    border: 1px solid var(--border);
+    border-radius: 26px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+  }
+
+  .hero-panel {
+    padding: 20px;
+  }
+
+  .hero-note {
+    margin-top: 14px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .hero-panel h2,
+  .section-title {
+    margin: 0;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+  }
+
+  .dropzone-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .dropzone {
+    position: relative;
+    overflow: hidden;
+    border-radius: 22px;
+    padding: 18px;
+    min-height: 182px;
+    border: 1px dashed rgba(126, 166, 179, 0.28);
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  }
+
+  .dropzone::before {
+    content: '';
+    position: absolute;
+    inset: auto -10% -45% auto;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(78, 205, 196, 0.12), transparent 70%);
+  }
+
+  .dropzone.replay::before {
+    background: radial-gradient(circle, rgba(255, 107, 87, 0.18), transparent 70%);
+  }
+
+  .dropzone.optional {
+    border-style: solid;
+    opacity: 0.88;
+  }
+
+  .dropzone h3 {
+    margin: 0 0 10px;
+    font-size: 24px;
+  }
+
+  .dropzone p {
+    margin: 0 0 14px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    max-width: 32ch;
+  }
+
+  .file-button input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .file-meta {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+    position: relative;
+    z-index: 1;
+  }
+
+  .file-meta strong {
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .stat-card {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(126, 166, 179, 0.18);
+  }
+
+  .stat-card span {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .stat-card strong {
+    display: block;
+    font-size: 20px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stat-card small {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-dim);
+    min-height: 16px;
+  }
+
+  .board-panel,
+  .side-panel,
+  .timeline-panel {
+    padding: 18px;
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .muted {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .board-shell {
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    border: 1px solid rgba(126, 166, 179, 0.16);
+    padding: 14px;
+  }
+
+  .canvas-stage {
+    width: 100%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #replayCanvas {
+    width: min(100%, 860px);
+    height: auto;
+    border-radius: 18px;
+    display: block;
+    box-shadow: inset 0 0 0 1px rgba(126, 166, 179, 0.12);
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .control-btn:disabled,
+  .speed-select:disabled,
+  .timeline-slider:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .speed-select {
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .timeline-panel {
+    margin-top: 16px;
+  }
+
+  .timeline-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    color: var(--text-dim);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+
+  .timeline-slider {
+    width: 100%;
+    accent-color: var(--accent-coral);
+  }
+
+  .side-panel {
+    display: grid;
+    gap: 14px;
+  }
+
+  .stack-card {
+    border-radius: 20px;
+    border: 1px solid rgba(126, 166, 179, 0.18);
+    background: rgba(255,255,255,0.025);
+    padding: 14px;
+  }
+
+  .summary-section[hidden] {
+    display: none;
+  }
+
+  .summary-block {
+    display: grid;
+    gap: 12px;
+  }
+
+  .details-card {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .details-card summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .details-card summary::after {
+    content: '+';
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-dim);
+  }
+
+  .details-card[open] summary::after {
+    content: '-';
+  }
+
+  .details-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .details-card summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .details-card[open] summary {
+    border-bottom: 1px solid rgba(126, 166, 179, 0.12);
+  }
+
+  .details-content {
+    padding: 14px;
+    padding-top: 10px;
+  }
+
+  .winner-grid,
+  .algorithm-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .winner-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .winner-card {
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(126, 166, 179, 0.16);
+  }
+
+  .winner-card span,
+  .algorithm-card span {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .winner-card strong,
+  .algorithm-card strong {
+    display: block;
+    font-size: 20px;
+  }
+
+  .winner-card small,
+  .algorithm-card small,
+  .empty-copy {
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .algorithm-card {
+    padding: 12px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.035);
+  }
+
+  .rank-list,
+  .log-list {
+    display: grid;
+    gap: 8px;
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  .rank-row,
+  .log-row {
+    display: grid;
+    gap: 10px;
+    align-items: center;
+    border-radius: 14px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(126, 166, 179, 0.1);
+  }
+
+  .rank-row {
+    grid-template-columns: 26px minmax(0, 1fr) 58px;
+  }
+
+  .rank-row .name {
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .rank-row .value,
+  .tick-pill {
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .perf-grid {
+    display: grid;
+    gap: 8px;
+    max-height: 300px;
+    overflow: auto;
+  }
+
+  .perf-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 68px 74px;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(126, 166, 179, 0.1);
+  }
+
+  .perf-row strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .perf-row small,
+  .log-row small {
+    color: var(--text-dim);
+  }
+
+  .log-row {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .state-empty {
+    padding: 22px 0;
+    text-align: center;
+    color: var(--text-dim);
+  }
+
+  @media (max-width: 1180px) {
+    .hero-grid,
+    .content-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .shell { padding: 14px; }
+    .dropzone-grid,
+    .stats-grid,
+    .winner-grid {
+      grid-template-columns: 1fr;
+    }
+    .controls { width: 100%; }
+    .control-btn,
+    .speed-select { flex: 1; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M6 7c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4 0 1.7-1 3.1-2.5 3.7l-4.3 1.8A3 3 0 0 0 9 15.3V17a3 3 0 0 0 3 3h2" />
+          <path d="M16.5 7.5h.01" />
+          <path d="M14 20h4" />
+        </svg>
+      </div>
+      <div>
+        <div class="eyebrow">SnakeRoyale Lab</div>
+        <h1>Replay Viewer</h1>
+        <div class="subtitle">先看盘面和事件，想看聚合结果时再叠加 <strong>summary.json</strong>。</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="chip">状态 <strong id="loadState">等待文件</strong></span>
+    </div>
+  </div>
+
+  <div class="hero-grid">
+    <section class="panel hero-panel">
+      <h2>Load Artifacts</h2>
+      <div class="dropzone-grid">
+        <div class="dropzone replay">
+          <h3>Replay Stream</h3>
+          <p>上传 <strong>replay.jsonl</strong>。这是必须文件，包含 metadata 和每个 tick 的完整状态帧。</p>
+          <label class="file-button">
+            选择 replay.jsonl
+            <input id="replayInput" type="file" accept=".jsonl,.txt,application/json">
+          </label>
+          <div class="file-meta">
+            <div>当前文件: <strong id="replayFileName">未加载</strong></div>
+            <div>帧数: <strong id="frameCount">0</strong></div>
+          </div>
+        </div>
+        <div class="dropzone optional">
+          <h3>Summary Overlay</h3>
+          <p>可选上传 <strong>summary.json</strong>，这样页面就能展示按算法聚合的赢家和 benchmark 摘要。</p>
+          <label class="file-button">
+            选择 summary.json
+            <input id="summaryInput" type="file" accept=".json,application/json">
+          </label>
+          <div class="file-meta">
+            <div>当前文件: <strong id="summaryFileName">未加载</strong></div>
+            <div>Benchmark: <strong id="summaryName">—</strong></div>
+          </div>
+        </div>
+      </div>
+      <div class="hero-note">默认只展示回放必需信息；summary 相关分析会在加载后出现，避免空面板占位。</div>
+    </section>
+  </div>
+
+  <div class="stats-grid">
+    <div class="panel stat-card"><span>Benchmark</span><strong id="statFrame">等待 replay.jsonl</strong><small id="statFrameMeta">尚未载入回放</small></div>
+    <div class="panel stat-card"><span>Alive</span><strong id="statAlive">0</strong><small id="statAliveMeta">场上存活蛇</small></div>
+    <div class="panel stat-card"><span>Record</span><strong id="statRecord">0</strong><small id="statRecordName">—</small></div>
+  </div>
+
+  <div class="content-grid">
+    <div>
+      <section class="panel board-panel">
+        <div class="panel-head">
+          <div>
+            <div class="section-title">Playback Stage</div>
+            <div class="muted" id="playbackMeta">载入 replay 后开始回放</div>
+          </div>
+          <div class="controls">
+            <button class="control-btn" id="prevBtn" disabled>上一帧</button>
+            <button class="control-btn" id="playBtn" disabled>播放</button>
+            <button class="control-btn" id="nextBtn" disabled>下一帧</button>
+            <select class="speed-select" id="speedSelect" aria-label="Playback speed" disabled>
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+            </select>
+          </div>
+        </div>
+        <div class="board-shell">
+          <div class="canvas-stage">
+            <canvas id="replayCanvas" width="900" height="900" role="img" aria-label="Replay board"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel timeline-panel">
+        <div class="timeline-meta">
+          <span id="timelineLabel">帧 0 / 0</span>
+          <span id="timelineTick">Tick 0</span>
+          <span id="timelineSpeed">Speed 1x</span>
+        </div>
+        <input class="timeline-slider" id="timelineSlider" type="range" min="0" max="0" value="0" aria-label="Replay timeline" disabled>
+      </section>
+    </div>
+
+    <aside class="panel side-panel">
+      <section class="stack-card">
+        <div class="panel-head">
+          <div class="section-title">Recent Events</div>
+          <div class="muted">关键转折</div>
+        </div>
+        <div class="log-list" id="eventLogList">
+          <div class="state-empty">尚未载入回放。</div>
+        </div>
+      </section>
+
+      <section class="stack-card">
+        <div class="panel-head">
+          <div class="section-title">Current Leaderboard</div>
+          <div class="muted">实时长度</div>
+        </div>
+        <div class="rank-list" id="leaderboardList">
+          <div class="state-empty">尚未载入回放。</div>
+        </div>
+      </section>
+
+      <details class="stack-card details-card" id="summaryDetails" hidden>
+        <summary>
+          <span class="details-label">
+            <span>Benchmark Analysis</span>
+            <span class="muted">赢家与算法聚合</span>
+          </span>
+          <span class="muted" id="summaryStatus">等待 summary.json</span>
+        </summary>
+        <div class="details-content">
+          <div class="summary-section" id="summarySection" hidden>
+            <div class="summary-block">
+              <div class="winner-grid" id="winnerGrid">
+                <div class="winner-card"><span>Avg Survival Bot</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+                <div class="winner-card"><span>Avg Length Bot</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+                <div class="winner-card"><span>Avg Survival Algo</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+                <div class="winner-card"><span>Avg Length Algo</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+              </div>
+              <div>
+                <div class="muted" style="margin-bottom: 10px;">按算法聚合</div>
+                <div class="algorithm-grid" id="algorithmGrid">
+                  <div class="empty-copy">等待 summary.json。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="state-empty" id="summaryPlaceholder">上传 summary.json 后显示赢家与算法聚合。</div>
+        </div>
+      </details>
+
+      <details class="stack-card details-card">
+        <summary>
+          <span class="details-label">
+            <span>More Stats</span>
+            <span class="muted">当前帧 performance</span>
+          </span>
+          <span class="muted">按需展开</span>
+        </summary>
+        <div class="details-content">
+          <div class="perf-grid" id="performanceList">
+            <div class="state-empty">尚未载入回放。</div>
+          </div>
+        </div>
+      </details>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const canvas = document.getElementById('replayCanvas');
+  const ctx = canvas.getContext('2d');
+  const CANVAS_SIZE = 900;
+  const FIELD_SIZE = 100;
+  const CELL = CANVAS_SIZE / FIELD_SIZE;
+  const COLORS = ['#ff6b57', '#4ecdc4', '#f6bd60', '#8ac926', '#62b6ff', '#ff8fab', '#90be6d', '#f28482', '#48cae4', '#ffca3a'];
+
+  const replayInput = document.getElementById('replayInput');
+  const summaryInput = document.getElementById('summaryInput');
+  const playBtn = document.getElementById('playBtn');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const speedSelect = document.getElementById('speedSelect');
+  const slider = document.getElementById('timelineSlider');
+  const summaryDetails = document.getElementById('summaryDetails');
+  const summarySection = document.getElementById('summarySection');
+  const summaryPlaceholder = document.getElementById('summaryPlaceholder');
+  const summaryStatus = document.getElementById('summaryStatus');
+
+  let replayMeta = null;
+  let replayFrames = [];
+  let replayEvents = [];
+  let summary = null;
+  let frameIndex = 0;
+  let playbackTimer = null;
+  let isPlaying = false;
+  let colorMap = new Map();
+  let colorCursor = 0;
+
+  const EMPTY_WINNERS_HTML = `
+    <div class="winner-card"><span>Avg Survival Bot</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+    <div class="winner-card"><span>Avg Length Bot</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+    <div class="winner-card"><span>Avg Survival Algo</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+    <div class="winner-card"><span>Avg Length Algo</span><strong>—</strong><small class="empty-copy">上传 summary.json 后显示。</small></div>
+  `;
+
+  const EMPTY_ALGORITHMS_HTML = '<div class="empty-copy">等待 summary.json。</div>';
+
+  replayInput.addEventListener('change', event => loadReplayFile(event.target.files[0]));
+  summaryInput.addEventListener('change', event => loadSummaryFile(event.target.files[0]));
+  playBtn.addEventListener('click', togglePlayback);
+  prevBtn.addEventListener('click', () => stepFrame(-1));
+  nextBtn.addEventListener('click', () => stepFrame(1));
+  speedSelect.addEventListener('change', () => {
+    document.getElementById('timelineSpeed').textContent = `Speed ${speedSelect.value}x`;
+    if (isPlaying) {
+      stopPlayback();
+      startPlayback();
+    }
+  });
+  slider.addEventListener('input', () => {
+    frameIndex = Number(slider.value);
+    renderFrame();
+  });
+
+  drawEmptyState();
+
+  async function loadReplayFile(file) {
+    if (!file) return;
+    stopPlayback();
+    let replayArtifact;
+    try {
+      replayArtifact = parseReplayArtifact(await file.text());
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'replay.jsonl 解析失败');
+      return;
+    }
+
+    replayMeta = replayArtifact.metadata;
+    replayFrames = replayArtifact.frames;
+    replayEvents = buildReplayEvents(replayFrames);
+    frameIndex = 0;
+    colorMap = new Map();
+    colorCursor = 0;
+
+    document.getElementById('replayFileName').textContent = file.name;
+    document.getElementById('frameCount').textContent = String(replayFrames.length);
+    document.getElementById('loadState').textContent = '已加载 replay';
+    document.getElementById('playbackMeta').textContent = `${replayMeta.benchmark_name || 'benchmark'} · ${replayFrames.length} 帧 · ${replayMeta.duration_seconds || '—'} 秒`;
+    if (summary) {
+      const mismatch = getSummaryMismatch(summary);
+      if (mismatch) {
+        summary = null;
+        document.getElementById('summaryFileName').textContent = '未加载';
+        document.getElementById('summaryName').textContent = '—';
+        document.getElementById('loadState').textContent = mismatch;
+        resetSummaryDisplay();
+      }
+    }
+    slider.max = String(replayFrames.length - 1);
+    slider.value = '0';
+    slider.disabled = false;
+    playBtn.disabled = false;
+    prevBtn.disabled = false;
+    nextBtn.disabled = false;
+    speedSelect.disabled = false;
+    renderFrame();
+  }
+
+  async function loadSummaryFile(file) {
+    if (!file) return;
+    let candidate;
+    try {
+      candidate = parseSummaryArtifact(await file.text());
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'summary.json 解析失败');
+      return;
+    }
+    const mismatch = getSummaryMismatch(candidate);
+    if (mismatch) {
+      alert(mismatch);
+      return;
+    }
+    summary = candidate;
+    summaryDetails.hidden = false;
+    summaryDetails.open = true;
+    document.getElementById('summaryFileName').textContent = file.name;
+    document.getElementById('summaryName').textContent = summary.benchmark_name || '—';
+    document.getElementById('loadState').textContent = replayMeta ? '已加载 replay + summary' : '已加载 summary';
+    renderSummary();
+  }
+
+  function getSummaryMismatch(candidate) {
+    if (!replayMeta || !candidate) {
+      return '';
+    }
+    if (!candidate.benchmark_run_id || !replayMeta.benchmark_run_id) {
+      return 'replay.jsonl 或 summary.json 缺少 benchmark_run_id';
+    }
+    if (candidate.benchmark_run_id !== replayMeta.benchmark_run_id) {
+      return 'summary.json 与 replay.jsonl 的 benchmark_run_id 不一致';
+    }
+    const replayTickRate = replayFrames.length ? replayFrames[0].state && replayFrames[0].state.tick_rate : null;
+    if ((candidate.benchmark_name || '') !== (replayMeta.benchmark_name || '')) {
+      return 'summary.json 与 replay.jsonl 的 benchmark_name 不一致';
+    }
+    if (Number(candidate.duration_seconds || 0) !== Number(replayMeta.duration_seconds || 0)) {
+      return 'summary.json 与 replay.jsonl 的 duration_seconds 不一致';
+    }
+    if (replayTickRate != null && Number(candidate.tick_rate || 0) !== Number(replayTickRate)) {
+      return 'summary.json 与 replay.jsonl 的 tick_rate 不一致';
+    }
+    if (replayFrames.length && Number(candidate.tick || 0) !== Number(replayFrames[replayFrames.length - 1].tick || 0)) {
+      return 'summary.json 与 replay.jsonl 的最终 tick 不一致';
+    }
+    return '';
+  }
+
+  function parseReplayArtifact(text) {
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) {
+      throw new Error('replay.jsonl 至少需要 metadata + 1 帧数据');
+    }
+
+    let records;
+    try {
+      records = lines.map(line => JSON.parse(line));
+    } catch {
+      throw new Error('replay.jsonl 不是合法的 JSONL 文件');
+    }
+
+    const metadata = records[0];
+    if (!metadata || metadata.type !== 'metadata' || typeof metadata !== 'object') {
+      throw new Error('replay.jsonl 缺少合法的 metadata 头记录');
+    }
+    if (typeof metadata.benchmark_run_id !== 'string' || !metadata.benchmark_run_id.trim()) {
+      throw new Error('replay.jsonl 缺少 benchmark_run_id');
+    }
+
+    const frames = records.slice(1).map((item, index) => {
+      if (!item || item.type !== 'frame' || typeof item !== 'object') {
+        throw new Error(`replay.jsonl 第 ${index + 2} 行不是合法的 frame 记录`);
+      }
+      if (typeof item.tick !== 'number' || !item.state || typeof item.state !== 'object') {
+        throw new Error(`replay.jsonl 第 ${index + 2} 行缺少 tick 或 state`);
+      }
+      return {
+        tick: item.tick,
+        state: item.state,
+        events: Array.isArray(item.events) ? item.events : [],
+      };
+    });
+
+    return { metadata, frames };
+  }
+
+  function parseSummaryArtifact(text) {
+    let candidate;
+    try {
+      candidate = JSON.parse(text);
+    } catch {
+      throw new Error('summary.json 不是合法的 JSON 文件');
+    }
+
+    if (!candidate || typeof candidate !== 'object') {
+      throw new Error('summary.json 必须是一个 JSON 对象');
+    }
+    if (typeof candidate.benchmark_name !== 'string' || !candidate.benchmark_name.trim()) {
+      throw new Error('summary.json 缺少 benchmark_name');
+    }
+    if (typeof candidate.benchmark_run_id !== 'string' || !candidate.benchmark_run_id.trim()) {
+      throw new Error('summary.json 缺少 benchmark_run_id');
+    }
+    if (!candidate.winners || typeof candidate.winners !== 'object') {
+      throw new Error('summary.json 缺少 winners');
+    }
+    if (!Array.isArray(candidate.per_bot) || !Array.isArray(candidate.per_algorithm)) {
+      throw new Error('summary.json 缺少 per_bot 或 per_algorithm 数组');
+    }
+    return candidate;
+  }
+
+  function resetSummaryDisplay() {
+    summaryDetails.hidden = true;
+    summaryDetails.open = false;
+    summarySection.hidden = true;
+    summaryPlaceholder.hidden = false;
+    summaryStatus.textContent = '等待 summary.json';
+    document.getElementById('winnerGrid').innerHTML = EMPTY_WINNERS_HTML;
+    document.getElementById('algorithmGrid').innerHTML = EMPTY_ALGORITHMS_HTML;
+  }
+
+  function togglePlayback() {
+    if (!replayFrames.length) return;
+    if (isPlaying) {
+      stopPlayback();
+    } else {
+      startPlayback();
+    }
+  }
+
+  function startPlayback() {
+    if (!replayFrames.length) return;
+    isPlaying = true;
+    playBtn.textContent = '暂停';
+    scheduleNextTick();
+  }
+
+  function stopPlayback() {
+    isPlaying = false;
+    playBtn.textContent = '播放';
+    if (playbackTimer) {
+      clearTimeout(playbackTimer);
+      playbackTimer = null;
+    }
+  }
+
+  function scheduleNextTick() {
+    if (!isPlaying) return;
+    const current = replayFrames[frameIndex] && replayFrames[frameIndex].state;
+    const tickRate = current && current.tick_rate ? current.tick_rate : 10;
+    const speed = Number(speedSelect.value);
+    playbackTimer = window.setTimeout(() => {
+      if (frameIndex >= replayFrames.length - 1) {
+        stopPlayback();
+        return;
+      }
+      frameIndex += 1;
+      slider.value = String(frameIndex);
+      renderFrame();
+      scheduleNextTick();
+    }, Math.max(40, 1000 / (tickRate * speed)));
+  }
+
+  function stepFrame(delta) {
+    if (!replayFrames.length) return;
+    stopPlayback();
+    frameIndex = Math.min(replayFrames.length - 1, Math.max(0, frameIndex + delta));
+    slider.value = String(frameIndex);
+    renderFrame();
+  }
+
+  function renderFrame() {
+    if (!replayFrames.length) {
+      drawEmptyState();
+      return;
+    }
+
+    const frame = replayFrames[frameIndex];
+    const state = frame.state;
+    drawGame(state);
+    renderStats(state);
+    renderLeaderboard(state.snakes || []);
+    renderPerformance(state.performance || []);
+    renderEvents(frameIndex);
+    renderTimeline(state);
+    renderSummary();
+  }
+
+  function renderStats(state) {
+    const alive = (state.snakes || []).filter(snake => snake.alive).length;
+    document.getElementById('statFrame').textContent = replayMeta && replayMeta.benchmark_name ? replayMeta.benchmark_name : 'replay';
+    document.getElementById('statFrameMeta').textContent = `${frameIndex + 1} / ${replayFrames.length} 帧 · Tick ${state.tick || 0}`;
+    document.getElementById('statAlive').textContent = String(alive);
+    document.getElementById('statAliveMeta').textContent = `${(state.snakes || []).length} 条参赛蛇`; 
+    document.getElementById('statRecord').textContent = String(state.record ? state.record.length : 0);
+    document.getElementById('statRecordName').textContent = state.record ? state.record.name : '—';
+  }
+
+  function renderTimeline(state) {
+    document.getElementById('timelineLabel').textContent = `帧 ${frameIndex + 1} / ${replayFrames.length}`;
+    document.getElementById('timelineTick').textContent = `Tick ${state.tick || 0}`;
+  }
+
+  function renderSummary() {
+    const winnerGrid = document.getElementById('winnerGrid');
+    const algorithmGrid = document.getElementById('algorithmGrid');
+
+    if (!summary) {
+      resetSummaryDisplay();
+      return;
+    }
+
+    summarySection.hidden = false;
+    summaryPlaceholder.hidden = true;
+    summaryStatus.textContent = summary.benchmark_name || '已加载 summary';
+
+    const winners = summary.winners || {};
+
+    winnerGrid.innerHTML = `
+      ${winnerCard('Avg Survival Bot', winners.bot_by_avg_survival_seconds)}
+      ${winnerCard('Avg Length Bot', winners.bot_by_avg_length)}
+      ${winnerCard('Avg Survival Algo', winners.algorithm_by_avg_survival_seconds, true)}
+      ${winnerCard('Avg Length Algo', winners.algorithm_by_avg_length, true)}
+    `;
+
+    if (!summary.per_algorithm || summary.per_algorithm.length === 0) {
+      algorithmGrid.innerHTML = '<div class="empty-copy">summary.json 没有算法聚合数据。</div>';
+      return;
+    }
+
+    algorithmGrid.innerHTML = summary.per_algorithm.map(item => `
+      <div class="algorithm-card">
+        <span>${escapeHtml(item.algorithm)}</span>
+        <strong>${formatMetric(item.avg_survival_seconds)}s / ${formatMetric(item.avg_length)}</strong>
+        <small>${item.bot_instances} bots · ${item.rounds} rounds · best ${item.best_length}</small>
+      </div>
+    `).join('');
+  }
+
+  function winnerCard(label, item, isAlgorithm = false) {
+    if (!item) {
+      return `<div class="winner-card"><span>${label}</span><strong>—</strong><small>缺少 summary 数据。</small></div>`;
+    }
+    const name = isAlgorithm ? item.algorithm : item.name;
+    const metric = item.avg_survival_seconds !== undefined ? `${formatMetric(item.avg_survival_seconds)}s · avg ${formatMetric(item.avg_length)}` : `${formatMetric(item.avg_length)}`;
+    return `<div class="winner-card"><span>${label}</span><strong>${escapeHtml(name)}</strong><small>${metric}</small></div>`;
+  }
+
+  function formatMetric(value) {
+    return Number(value || 0).toFixed(2);
+  }
+
+  function renderLeaderboard(snakes) {
+    const list = document.getElementById('leaderboardList');
+    const alive = [...snakes].filter(snake => snake.alive).sort((left, right) => right.length - left.length);
+    if (alive.length === 0) {
+      list.innerHTML = '<div class="state-empty">当前帧没有存活蛇。</div>';
+      return;
+    }
+
+    list.innerHTML = alive.map((snake, index) => `
+      <div class="rank-row">
+        <div class="tick-pill">${index + 1}</div>
+        <div class="name">${escapeHtml(snake.name)}</div>
+        <div class="value">${snake.length}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderPerformance(performance) {
+    const list = document.getElementById('performanceList');
+    const sorted = [...performance].sort((left, right) => {
+      if (right.avg_survival_seconds !== left.avg_survival_seconds) return right.avg_survival_seconds - left.avg_survival_seconds;
+      if (right.avg_length !== left.avg_length) return right.avg_length - left.avg_length;
+      return String(left.name).localeCompare(String(right.name));
+    });
+
+    if (sorted.length === 0) {
+      list.innerHTML = '<div class="state-empty">当前帧没有 performance 数据。</div>';
+      return;
+    }
+
+    list.innerHTML = sorted.map(item => `
+      <div class="perf-row">
+        <div>
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${item.rounds} rounds · best ${item.best_length}</small>
+        </div>
+        <div class="tick-pill">${item.avg_length.toFixed(1)}</div>
+        <div class="tick-pill">${item.avg_survival_seconds.toFixed(1)}s</div>
+      </div>
+    `).join('');
+  }
+
+  function renderEvents(index) {
+    const list = document.getElementById('eventLogList');
+    if (!replayEvents.length) {
+      list.innerHTML = '<div class="state-empty">暂无可用事件。</div>';
+      return;
+    }
+
+    const recent = replayEvents.slice(0, index + 1).flatMap(item => item.events).slice(-8).reverse();
+    if (recent.length === 0) {
+      list.innerHTML = '<div class="state-empty">这一段回放没有明显事件。</div>';
+      return;
+    }
+
+    list.innerHTML = recent.map(item => `
+      <div class="log-row">
+        <div class="tick-pill">T${item.tick}</div>
+        <small>${escapeHtml(item.message)}</small>
+      </div>
+    `).join('');
+  }
+
+  function buildReplayEvents(frames) {
+    const events = [];
+    let previousIds = new Set();
+    let previousRecord = 0;
+    for (const frame of frames) {
+      const state = frame.state;
+      const tickEvents = [];
+      if (Array.isArray(frame.events) && frame.events.length > 0) {
+        for (const event of frame.events) {
+          if (event.type === 'death') {
+            tickEvents.push({ tick: state.tick, message: `${event.name} died: ${event.reason}` });
+          } else if (event.type === 'respawn') {
+            tickEvents.push({ tick: state.tick, message: `${event.name} respawned` });
+          }
+        }
+      }
+      const currentIds = new Set((state.snakes || []).map(snake => snake.id));
+      if (previousIds.size > 0) {
+        for (const snake of state.snakes || []) {
+          if (!previousIds.has(snake.id)) {
+            tickEvents.push({ tick: state.tick, message: `${snake.name} joined the room` });
+          }
+        }
+      }
+      for (const id of previousIds) {
+        if (!currentIds.has(id)) {
+          tickEvents.push({ tick: state.tick, message: `A snake disappeared from the room` });
+        }
+      }
+      if (state.record && state.record.length > previousRecord) {
+        tickEvents.push({ tick: state.tick, message: `${state.record.name} pushed the record to ${state.record.length}` });
+        previousRecord = state.record.length;
+      }
+      previousIds = currentIds;
+      events.push({ tick: state.tick, events: tickEvents });
+    }
+    return events;
+  }
+
+  function drawGame(state) {
+    ctx.fillStyle = '#08131a';
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    ctx.strokeStyle = 'rgba(126, 166, 179, 0.12)';
+    ctx.lineWidth = 0.6;
+    for (let index = 0; index <= FIELD_SIZE; index += 10) {
+      const point = index * CELL;
+      ctx.beginPath(); ctx.moveTo(point, 0); ctx.lineTo(point, CANVAS_SIZE); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, point); ctx.lineTo(CANVAS_SIZE, point); ctx.stroke();
+    }
+
+    for (const [foodX, foodY] of state.foods || []) {
+      const centerX = foodX * CELL + CELL / 2;
+      const centerY = foodY * CELL + CELL / 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, CELL * 0.58, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(246, 189, 96, 0.16)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, CELL * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = '#f6bd60';
+      ctx.fill();
+    }
+
+    for (const snake of state.snakes || []) {
+      const color = getSnakeColor(snake.id);
+      for (let index = snake.body.length - 1; index >= 0; index -= 1) {
+        const [bodyX, bodyY] = snake.body[index];
+        const x = bodyX * CELL;
+        const y = bodyY * CELL;
+        if (index === 0) {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = color;
+          roundRect(ctx, x + 0.7, y + 0.7, CELL - 1.4, CELL - 1.4, 2.8);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else {
+          ctx.globalAlpha = 0.45 + (0.55 * (1 - index / snake.body.length));
+          ctx.fillStyle = color;
+          roundRect(ctx, x + 0.9, y + 0.9, CELL - 1.8, CELL - 1.8, 2.1);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      if (snake.body.length > 0) {
+        const [headX, headY] = snake.body[0];
+        const labelX = headX * CELL + CELL / 2;
+        const labelY = headY * CELL - 5;
+        ctx.font = '600 10px Space Grotesk, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillText(snake.name, labelX + 0.8, labelY + 0.8);
+        ctx.fillStyle = '#f5fbff';
+        ctx.fillText(snake.name, labelX, labelY);
+      }
+    }
+  }
+
+  function roundRect(context, x, y, width, height, radius) {
+    context.beginPath();
+    context.moveTo(x + radius, y);
+    context.lineTo(x + width - radius, y);
+    context.quadraticCurveTo(x + width, y, x + width, y + radius);
+    context.lineTo(x + width, y + height - radius);
+    context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    context.lineTo(x + radius, y + height);
+    context.quadraticCurveTo(x, y + height, x, y + height - radius);
+    context.lineTo(x, y + radius);
+    context.quadraticCurveTo(x, y, x + radius, y);
+    context.closePath();
+  }
+
+  function getSnakeColor(id) {
+    if (!colorMap.has(id)) {
+      colorMap.set(id, COLORS[colorCursor % COLORS.length]);
+      colorCursor += 1;
+    }
+    return colorMap.get(id);
+  }
+
+  function drawEmptyState() {
+    ctx.fillStyle = '#08131a';
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.fillStyle = '#6e8b95';
+    ctx.font = '600 24px Space Grotesk, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load replay.jsonl to begin playback', CANVAS_SIZE / 2, CANVAS_SIZE / 2);
+  }
+
+  function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+  }
+})();
+</script>
+</body>
+</html>

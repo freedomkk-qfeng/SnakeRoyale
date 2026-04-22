@@ -6,6 +6,31 @@ The format follows a simple versioned changelog and starts formal tracking from 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-21
+
+### Added
+
+- Local AI benchmark tooling under `benchmark/` for fixed-duration mixed-bot runs.
+- Authoritative benchmark replay artifacts in `replay.jsonl`, including per-benchmark-tick full-room frames, a unique `benchmark_run_id`, and death/respawn events.
+- Browser replay viewer at `/replay` for timeline playback, current-frame leaderboard inspection, and algorithm-level result overlays.
+- Benchmark smoke and regression coverage for replay writing, duplicate-name handling, oversize rosters, startup failures, and mid-run bot exits.
+
+### Changed
+
+- Project documentation now describes the benchmark workflow, replay viewer, and benchmark artifact contract.
+- Benchmark summaries now aggregate exact per-bot and per-algorithm metrics from server runtime stats instead of reconstructing from rounded dashboard values.
+- Benchmark replay and summary artifacts now share a `benchmark_run_id`, and replay capture starts when the measured benchmark window begins.
+- Benchmark validation now treats both process exits and room dropouts as fatal during the measured window.
+- Benchmark measurement now resets into a clean room state once the full roster is ready.
+- The dashboard header now links directly to the replay viewer.
+
+### Fixed
+
+- Prevented benchmark runs from silently succeeding when a configured bot crashes before the run completes.
+- Prevented replay artifacts from dropping their final recorded tick during benchmark shutdown.
+- Rejected mismatched `summary.json` overlays in the replay viewer when their `benchmark_run_id` does not belong to the loaded replay.
+- Prevented whitespace-padded benchmark config fields from breaking roster matching.
+
 ## [0.3.0] - 2026-04-20
 
 ### Added

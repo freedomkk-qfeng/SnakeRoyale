@@ -1,6 +1,8 @@
 import asyncio
+import io
 import json
 import unittest
+import zipfile
 
 import aiohttp
 from aiohttp.client_exceptions import WSServerHandshakeError
@@ -83,6 +85,37 @@ class ServerE2ETests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(welcome["send_timeout_ms"], 120)
         self.assertEqual(welcome["disconnect_grace_ms"], 300)
         self.assertFalse(welcome["resumed"])
+
+    async def test_replay_page_is_served(self):
+        async with self.session.get(f"{self.base_url}/replay") as response:
+            self.assertEqual(response.status, 200)
+            body = await response.text()
+
+        self.assertIn("Replay Viewer", body)
+        self.assertIn("function getSummaryMismatch", body)
+        self.assertIn("benchmark_run_id 不一致", body)
+
+    async def test_client_sdk_archive_is_served(self):
+        async with self.session.get(f"{self.base_url}/download/client-sdk.zip") as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("filename=client-sdk.zip", response.headers.get("Content-Disposition", ""))
+            archive_bytes = await response.read()
+
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as bundle:
+            names = set(bundle.namelist())
+
+        self.assertIn("snake-client-sdk/client.py", names)
+        self.assertIn("snake-client-sdk/random_client.py", names)
+        self.assertIn("snake-client-sdk/sdk.py", names)
+        self.assertIn("snake-client-sdk/algorithms.py", names)
+
+    async def test_legacy_client_download_serves_python_file(self):
+        async with self.session.get(f"{self.base_url}/download/client.py") as response:
+            self.assertEqual(response.status, 200)
+            body = await response.text()
+
+        self.assertIn("class SnakeAI", body)
+        self.assertIn("async def register", body)
 
     async def test_register_rejects_duplicate_name(self):
         await self.register_player("SameName")

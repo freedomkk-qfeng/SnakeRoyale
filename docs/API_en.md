@@ -1,6 +1,6 @@
 # SnakeRoyale — API Docs
 
-Current version: `0.3.0`
+Current version: `0.4.0`
 
 ## Overview
 
@@ -10,6 +10,7 @@ SnakeRoyale is a multiplayer online snake battle arena. The server runs the game
 - **Protocol**: HTTP (registration) + WebSocket (gameplay)
 - **Data format**: JSON
 - **Dashboard**: `http://<host>:15000/`
+- **Replay Viewer**: `http://<host>:15000/replay`
 - **This page**: `http://<host>:15000/docs`
 
 ## Game Rules
@@ -209,11 +210,13 @@ Sent immediately after death. Your snake has respawned; the next `state` message
 ```json
 {
   "type": "move",
-  "direction": "up"
+  "direction": "up",
+  "tick": 1234
 }
 ```
 
 - Directions: `"up"` / `"down"` / `"left"` / `"right"`
+- `tick` is optional for normal gameplay. SDK clients echo the last observed `state.tick` so benchmark runs can reject stale pre-reset moves; benchmark bots are required to send it.
 - 180° reversal is blocked (e.g., can't go left while moving right)
 - Only the last direction per tick is applied
 - If no move is sent, the snake continues in its current direction
@@ -228,7 +231,7 @@ View current game status and leaderboard (no auth required).
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "tick": 5678,
   "tick_rate": 10,
   "send_timeout_ms": 80,
@@ -263,7 +266,7 @@ Returns runtime config used by the dashboard.
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "tick_rate": 10,
   "send_timeout_ms": 80,
   "disconnect_grace_ms": 3000,
@@ -272,6 +275,15 @@ Returns runtime config used by the dashboard.
   "max_spectators": 50
 }
 ```
+
+### `GET /replay`
+
+Serves the browser replay viewer used for local benchmark artifacts.
+
+- Upload `replay.jsonl` to scrub and replay the measured benchmark timeline.
+- Upload `summary.json` as an optional overlay to show per-algorithm winners and aggregate metrics.
+- Both artifacts are expected to come from the benchmark runner and carry the same `benchmark_run_id`.
+- The page rejects overlays whose `benchmark_run_id` or core benchmark metadata do not match the loaded replay.
 
 ---
 
@@ -324,18 +336,30 @@ curl http://<host>:15000/status
 
 ---
 
-## 7. Example Client
+## 7. Example Client SDK
 
-We provide a Python AI client using BFS pathfinding, ready to use:
+We provide a Python client SDK with two built-in algorithms:
 
-- **[📄 View source (client.py)](/api/client-source)** — Open in browser, copy directly
-- **[⬇ Download client.py](/download/client.py)** — Download to local
+- `client.py` — BFS pathfinding client
+- `random_client.py` — random safe-move client
+
+SDK runtime responsibilities:
+
+- registration retry on temporary name conflicts
+- reconnect loop
+- WebSocket connect / receive / send flow
+
+Get the files:
+
+- **[📄 View default BFS source (client.py)](/api/client-source)** — Open in browser, inspect the BFS entrypoint
+- **[⬇ Download client SDK bundle](/download/client-sdk.zip)** — Download `client.py`, `random_client.py`, `sdk.py`, and helpers
 
 Install dependency: `pip install aiohttp`
 
 Run:
 ```bash
 python client.py --server http://<host>:15000 --name "your_name"
+python random_client.py --server http://<host>:15000 --name "your_random_bot"
 ```
 
 ---

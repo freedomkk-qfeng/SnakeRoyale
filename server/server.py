@@ -1,11 +1,13 @@
 import asyncio
 import contextlib
+import io
 import json
 from dataclasses import dataclass, field
 import os
 import uuid
 import logging
 import time
+import zipfile
 
 from aiohttp import web
 
@@ -32,7 +34,13 @@ GAME_TASK_KEY = web.AppKey("game_task", asyncio.Task)
 STATE_KEY = web.AppKey("runtime_state", "ServerRuntime")
 STATIC_DIR_KEY = web.AppKey("static_dir", str)
 CLIENT_PY_KEY = web.AppKey("client_py", str)
+CLIENT_DOWNLOAD_PY_KEY = web.AppKey("client_download_py", str)
+CLIENT_DIR_KEY = web.AppKey("client_dir", str)
 DOCS_DIR_KEY = web.AppKey("docs_dir", str)
+TICK_LISTENERS_KEY = web.AppKey("tick_listeners", list)
+PLAYER_EVENT_LISTENERS_KEY = web.AppKey("player_event_listeners", list)
+GAME_LOOP_UNPAUSED_KEY = web.AppKey("game_loop_unpaused", asyncio.Event)
+GAME_LOOP_STEP_LOCK_KEY = web.AppKey("game_loop_step_lock", asyncio.Lock)
 
 
 @dataclass
@@ -120,6 +128,16 @@ async def pop_next_batch(mailbox: OutboundMailbox) -> list[OutboundMessage] | No
             return batch
 
 
+def emit_player_event(app: web.Application, payload: dict):
+    if not app[PLAYER_EVENT_LISTENERS_KEY]:
+        return
+    for listener in list(app[PLAYER_EVENT_LISTENERS_KEY]):
+        try:
+            listener(payload)
+        except Exception:
+            logger.exception("Player event listener failed")
+
+
 async def send_batch(ws: web.WebSocketResponse, batch: list[OutboundMessage]):
     for message in batch:
         if message.kind == "json":
@@ -130,11 +148,14 @@ async def send_batch(ws: web.WebSocketResponse, batch: list[OutboundMessage]):
 
 async def disconnect_player(state: ServerRuntime, key: str, ws: web.WebSocketResponse, reason: str):
     mailbox = None
+    connection_name = None
+    app = ws._req.app if ws._req is not None else None
     async with state.connection_state_lock:
         connection = state.connected_clients.get(key)
         if connection is not None and connection.ws is ws:
             state.connected_clients.pop(key, None)
             state.disconnected_players.pop(key, None)
+            connection_name = connection.name
             if key in state.game.snakes:
                 if DISCONNECT_GRACE_SECONDS > 0:
                     state.disconnected_players[key] = time.monotonic() + DISCONNECT_GRACE_SECONDS
@@ -146,6 +167,16 @@ async def disconnect_player(state: ServerRuntime, key: str, ws: web.WebSocketRes
 
     if mailbox is not None:
         await close_mailbox(mailbox)
+
+    if app is not None and connection_name is not None:
+        emit_player_event(app, {
+            "type": "player_disconnected",
+            "key": key,
+            "name": connection_name,
+            "reason": reason,
+            "tick": state.game.tick_count,
+            "captured_at": time.time(),
+        })
 
     if not ws.closed:
         with contextlib.suppress(Exception):
@@ -271,6 +302,14 @@ async def handle_ws(request: web.Request):
 
     public_id, resumed = await ensure_player_snake(state, key, name)
     logger.info("Player connected: %s (%s)", name, "resume" if resumed else "spawn")
+    emit_player_event(request.app, {
+        "type": "player_connected",
+        "key": key,
+        "name": name,
+        "resumed": resumed,
+        "tick": state.game.tick_count,
+        "captured_at": time.time(),
+    })
 
     # Send initial welcome
     try:
@@ -299,7 +338,8 @@ async def handle_ws(request: web.Request):
                     continue
                 if data.get("type") == "move":
                     direction = data.get("direction", "")
-                    state.game.set_direction(key, direction)
+                    observed_tick = data.get("tick") if isinstance(data.get("tick"), int) else None
+                    state.game.set_direction(key, direction, observed_tick=observed_tick)
             elif msg.type == web.WSMsgType.ERROR:
                 logger.error("WS error for %s: %s", name, ws.exception())
     finally:
@@ -341,44 +381,67 @@ async def game_loop(app: web.Application):
     tick_interval = 1.0 / TICK_RATE
 
     while True:
-        t0 = time.monotonic()
-        try:
-            await expire_disconnected_players(state)
+        await app[GAME_LOOP_UNPAUSED_KEY].wait()
+        async with app[GAME_LOOP_STEP_LOCK_KEY]:
+            t0 = time.monotonic()
+            try:
+                await expire_disconnected_players(state)
 
-            # Always advance game tick (even with 0 players, spectators need state)
-            deaths = state.game.tick()
-            game_state = state.game.get_state()
+                # Always advance game tick (even with 0 players, spectators need state)
+                deaths = state.game.tick()
+                game_state = state.game.get_state()
 
-            for key in deaths:
-                if key in state.game.snakes:
-                    state.game.respawn_snake(key)
+                replay_events = []
+                for key, reason in deaths.items():
+                    replay_name = state.registered_players.get(key, key[:4])
+                    replay_events.append({"type": "death", "name": replay_name, "reason": reason})
 
-            # Fan out state into independent per-client sender tasks.
-            for key, connection in list(state.connected_clients.items()):
-                if connection.ws.closed:
-                    await disconnect_player(state, key, connection.ws, "socket already closed")
-                    continue
-                batch = [OutboundMessage("json", {**game_state, "you": state.game.get_public_id(key)})]
-                if key in deaths:
-                    batch.append(OutboundMessage("json", {
-                        "type": "death",
-                        "reason": deaths[key],
-                    }))
-                    batch.append(OutboundMessage("json", {"type": "respawn"}))
-                await push_state_batch(connection.mailbox, batch)
+                for key in deaths:
+                    if key in state.game.snakes:
+                        state.game.respawn_snake(key)
+                        replay_events.append({
+                            "type": "respawn",
+                            "name": state.game.snakes[key].name,
+                            "public_id": state.game.get_public_id(key),
+                        })
 
-            # Broadcast to spectators (dashboard)
-            if state.spectators:
-                state_json = json.dumps(game_state)
-                for connection in list(state.spectators):
+                if app[TICK_LISTENERS_KEY]:
+                    replay_payload = {
+                        "tick": game_state.get("tick", 0),
+                        "captured_at": time.time(),
+                        "state": game_state,
+                        "events": replay_events,
+                    }
+                    for listener in list(app[TICK_LISTENERS_KEY]):
+                        try:
+                            listener(replay_payload)
+                        except Exception:
+                            logger.exception("Tick listener failed")
+
+                for key, connection in list(state.connected_clients.items()):
                     if connection.ws.closed:
-                        await disconnect_spectator(state, connection, "socket already closed")
+                        await disconnect_player(state, key, connection.ws, "socket already closed")
                         continue
-                    await push_state_batch(connection.mailbox, [OutboundMessage("text", state_json)])
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Game loop iteration failed")
+                    batch = [OutboundMessage("json", {**game_state, "you": state.game.get_public_id(key)})]
+                    if key in deaths:
+                        batch.append(OutboundMessage("json", {
+                            "type": "death",
+                            "reason": deaths[key],
+                        }))
+                        batch.append(OutboundMessage("json", {"type": "respawn"}))
+                    await push_state_batch(connection.mailbox, batch)
+
+                if state.spectators:
+                    state_json = json.dumps(game_state)
+                    for connection in list(state.spectators):
+                        if connection.ws.closed:
+                            await disconnect_spectator(state, connection, "socket already closed")
+                            continue
+                        await push_state_batch(connection.mailbox, [OutboundMessage("text", state_json)])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Game loop iteration failed")
 
         elapsed = time.monotonic() - t0
         sleep_time = max(0, tick_interval - elapsed)
@@ -448,11 +511,42 @@ async def handle_docs_page(request: web.Request):
     return web.FileResponse(os.path.join(static_dir, "docs.html"))
 
 
+async def handle_replay_page(request: web.Request):
+    static_dir = request.app[STATIC_DIR_KEY]
+    return web.FileResponse(os.path.join(static_dir, "replay.html"))
+
+
 async def handle_download_client(request: web.Request):
-    client_py = request.app[CLIENT_PY_KEY]
+    client_py = request.app[CLIENT_DOWNLOAD_PY_KEY]
     return web.FileResponse(
         client_py,
         headers={"Content-Disposition": "attachment; filename=client.py"},
+    )
+
+
+async def handle_download_client_sdk(request: web.Request):
+    client_dir = request.app[CLIENT_DIR_KEY]
+    archive = io.BytesIO()
+    sdk_files = [
+        "algorithms.py",
+        "client.py",
+        "random_client.py",
+        "requirements.txt",
+        "run_clients.py",
+        "sdk.py",
+    ]
+
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for filename in sdk_files:
+            bundle.write(
+                os.path.join(client_dir, filename),
+                arcname=os.path.join("snake-client-sdk", filename),
+            )
+
+    return web.Response(
+        body=archive.getvalue(),
+        headers={"Content-Disposition": "attachment; filename=client-sdk.zip"},
+        content_type="application/zip",
     )
 
 
@@ -480,9 +574,43 @@ async def handle_docs_en(request: web.Request):
     )
 
 
+async def push_state_snapshot(app: web.Application):
+    state = app[STATE_KEY]
+    game_state = state.game.get_state()
+
+    for key, connection in list(state.connected_clients.items()):
+        if connection.ws.closed:
+            await disconnect_player(state, key, connection.ws, "socket already closed")
+            continue
+        await push_state_batch(connection.mailbox, [OutboundMessage("json", {**game_state, "you": state.game.get_public_id(key)})])
+
+    if state.spectators:
+        state_json = json.dumps(game_state)
+        for connection in list(state.spectators):
+            if connection.ws.closed:
+                await disconnect_spectator(state, connection, "socket already closed")
+                continue
+            await push_state_batch(connection.mailbox, [OutboundMessage("text", state_json)])
+
+
+async def pause_game_loop(app: web.Application):
+    app[GAME_LOOP_UNPAUSED_KEY].clear()
+    async with app[GAME_LOOP_STEP_LOCK_KEY]:
+        return None
+
+
+def resume_game_loop(app: web.Application):
+    app[GAME_LOOP_UNPAUSED_KEY].set()
+
+
 def create_app():
     app = web.Application()
     app[STATE_KEY] = ServerRuntime()
+    app[TICK_LISTENERS_KEY] = []
+    app[PLAYER_EVENT_LISTENERS_KEY] = []
+    app[GAME_LOOP_UNPAUSED_KEY] = asyncio.Event()
+    app[GAME_LOOP_UNPAUSED_KEY].set()
+    app[GAME_LOOP_STEP_LOCK_KEY] = asyncio.Lock()
     app.router.add_post("/register", handle_register)
     app.router.add_get("/ws", handle_ws)
     app.router.add_get("/spectate", handle_spectate)
@@ -493,9 +621,15 @@ def create_app():
     app[STATIC_DIR_KEY] = static_dir
     app.router.add_get("/", handle_index)
     app.router.add_get("/docs", handle_docs_page)
-    client_py = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "client", "client.py"))
+    app.router.add_get("/replay", handle_replay_page)
+    client_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "client"))
+    client_py = os.path.join(client_dir, "client.py")
+    client_download_py = os.path.join(client_dir, "standalone_client.py")
+    app[CLIENT_DIR_KEY] = client_dir
     app[CLIENT_PY_KEY] = client_py
+    app[CLIENT_DOWNLOAD_PY_KEY] = client_download_py
     app.router.add_get("/download/client.py", handle_download_client)
+    app.router.add_get("/download/client-sdk.zip", handle_download_client_sdk)
     app.router.add_get("/api/client-source", handle_client_source)
     docs_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs"))
     app[DOCS_DIR_KEY] = docs_dir

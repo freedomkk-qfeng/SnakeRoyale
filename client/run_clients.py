@@ -10,14 +10,13 @@
 import argparse
 import asyncio
 import os
-import sys
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Import the real client module
-import client as snake_client
+from algorithms import ALGORITHMS, create_algorithm
+import sdk
 
 
 def read_positive_int_env(name: str, default: int) -> int:
@@ -29,20 +28,9 @@ def read_positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
-async def run_one(server: str, name: str, reconnect_delay_ms: int):
-    """Run a single client with reconnection."""
-    key = await snake_client.register(server, name)
-    reconnect_delay_seconds = max(reconnect_delay_ms, 1) / 1000.0
-    attempt = 0
-    while True:
-        attempt += 1
-        try:
-            await snake_client.play(server, key)
-        except Exception as e:
-            logger.warning(
-                f"[{name}] Disconnected: {e}, reconnecting in {reconnect_delay_seconds:.2f}s... (attempt {attempt})"
-            )
-            await asyncio.sleep(reconnect_delay_seconds)
+async def run_one(server: str, name: str, reconnect_delay_ms: int, algorithm_name: str):
+    """Run a single SDK-backed client with reconnection."""
+    await sdk.run_forever(server, name, create_algorithm(algorithm_name), reconnect_delay_ms)
 
 
 async def main():
@@ -51,6 +39,12 @@ async def main():
     parser.add_argument("--server", default="http://localhost:15000", help="服务器地址")
     parser.add_argument("--prefix", default="Bot", help="名字前缀 (默认: Bot)")
     parser.add_argument(
+        "--algorithm",
+        default=os.getenv("SNAKE_CLIENT_ALGORITHM", "bfs").strip() or "bfs",
+        choices=sorted(ALGORITHMS),
+        help="内置算法选择 (默认: bfs，可通过 SNAKE_CLIENT_ALGORITHM 覆盖)",
+    )
+    parser.add_argument(
         "--reconnect-delay-ms",
         type=int,
         default=read_positive_int_env("SNAKE_CLIENT_RECONNECT_DELAY_MS", 3000),
@@ -58,16 +52,20 @@ async def main():
     )
     args = parser.parse_args()
 
-    logger.info(f"Starting {args.count} AI clients -> {args.server}")
+    logger.info("Starting %s %s AI clients -> %s", args.count, args.algorithm, args.server)
 
     tasks = []
     for i in range(1, args.count + 1):
         name = f"{args.prefix}_{i:02d}"
-        tasks.append(asyncio.create_task(run_one(args.server, name, args.reconnect_delay_ms)))
+        tasks.append(
+            asyncio.create_task(
+                run_one(args.server, name, args.reconnect_delay_ms, args.algorithm)
+            )
+        )
         # Stagger connections slightly
         await asyncio.sleep(0.1)
 
-    logger.info(f"All {args.count} clients launched")
+    logger.info("All %s clients launched", args.count)
     await asyncio.gather(*tasks)
 
 

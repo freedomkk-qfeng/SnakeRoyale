@@ -7,7 +7,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-PROJECT_VERSION = "0.3.0"
+PROJECT_VERSION = "0.4.0"
 DEFAULT_SERVER_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "server.json"
 SERVER_CONFIG_PATH = Path(os.getenv("SNAKE_SERVER_CONFIG", str(DEFAULT_SERVER_CONFIG_PATH)))
 

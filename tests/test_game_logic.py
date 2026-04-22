@@ -48,6 +48,31 @@ class GameLogicTests(unittest.TestCase):
 
         self.assertIsNone(snake.pending_direction)
 
+    def test_stale_observed_tick_is_only_rejected_in_strict_mode(self):
+        game = self.game_module.Game()
+        snake = game.spawn_snake("k5", "Epsilon")
+        snake.direction = "up"
+        game.tick_count = 10
+
+        game.set_direction("k5", "right", observed_tick=9)
+
+        self.assertEqual(snake.pending_direction, "right")
+        self.assertEqual(snake.pending_state_tick, 9)
+
+        snake.pending_direction = None
+        snake.pending_state_tick = None
+        game.strict_observed_tick = True
+
+        game.set_direction("k5", "right", observed_tick=9)
+
+        self.assertIsNone(snake.pending_direction)
+        self.assertIsNone(snake.pending_state_tick)
+
+        game.set_direction("k5", "right", observed_tick=10)
+
+        self.assertEqual(snake.pending_direction, "right")
+        self.assertEqual(snake.pending_state_tick, 10)
+
     def test_performance_stats_include_current_life(self):
         game = self.game_module.Game()
         snake = game.spawn_snake("k4", "Delta")
